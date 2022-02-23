@@ -146,7 +146,9 @@ hw:1,0,1 --> MPC      = F0 47 7F 3B 41 00 13 00 00 00 00 00 00 00 00 00  | .G.;A
 ```
 ## TKGL_IAMFORCE
 
-This is derivative POC based on the anyctrl library allowing hardware identity spoofing.   
+A first derivative POC based on the anyctrl library allowed hardware identity.   
 I used that to run the [Force MPC application on an MPC Live](https://github.com/TheKikGen/MPC-LiveXplore/wiki/Iamforce-:-a-MPC-Live-like-a-Force-proof-of-concept) connected to a 8x8 pads controlleur. 
+
+The new ImaForce project is based on tkgl_mpcmapper
 
 
