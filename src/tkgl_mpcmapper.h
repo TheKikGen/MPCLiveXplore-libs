@@ -70,30 +70,13 @@ __ __| |           |  /_) |     ___|             |           |\n\
 #define POWER_SUPPLY_CAPACITY "100"
 
 // Colors R G B (nb . max r g b value is 7f. The bit 8 is always set )
-#define COLOR_FIRE       0xFF0000
-#define COLOR_ORANGE     0xFF6D17
-#define COLOR_TANGERINE  0xFF4400
-#define COLOR_APRICOT    0xFF8800
-#define COLOR_YELLOW     0xECEC24
-#define COLOR_CANARY     0xFFD500
-#define COLOR_LEMON      0xE6FF00
-#define COLOR_CHARTREUSE 0xA2FF00
-#define COLOR_NEON       0x55FF00
-#define COLOR_LIME       0x11FF00
-#define COLOR_CLOVER     0x00FF33
-#define COLOR_SEA        0x00FF80
-#define COLOR_MINT       0x00FFC4
-#define COLOR_CYAN       0x00F7FF
-#define COLOR_SKY        0x00AAFF
-#define COLOR_AZURE      0x0066FF
-#define COLOR_GREY       0xA2A9AD
-#define COLOR_MIDNIGHT   0x0022FF
-#define COLOR_INDIGO     0x5200FF
-#define COLOR_VIOLET     0x6F00FF
-#define COLOR_GRAPPE     0xB200FF
-#define COLOR_FUSHIA     0xFF00FF
-#define COLOR_MAGENTA    0xFF00BB
-#define COLOR_CORAL      0xFF0077
+#define COLOR_WHITE   0x7F7F7F
+#define COLOR_BLACK   0x000000
+#define COLOR_RED     0x7F0000
+#define COLOR_BLUE    0x00007F
+#define COLOR_GREEN   0x007F00
+#define COLOR_YELLOW  0x007F7F
+#define COLOR_MAGENTA 0x7F007F
 
 // Mute pads mod button value
 #define FORCE_ASSIGN_A   123
@@ -107,6 +90,9 @@ __ __| |           |  /_) |     ___|             |           |\n\
 #define FORCE_RIGHT 0X73
 #define FORCE_UP    0X70
 #define FORCE_DOWN  0x71
+
+#define FORCE_MATRIX 3
+
 
 // MPC Bank buttons
 #define BANK_A 0x23

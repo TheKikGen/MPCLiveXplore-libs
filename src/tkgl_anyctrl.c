@@ -138,6 +138,56 @@ int match(const char *string, char *pattern)
     return(1);
 }
 
+
+///////////////////////////////////////////////////////////////////////////////
+// Read a key,value pair from our config file (INI file format)
+///////////////////////////////////////////////////////////////////////////////
+int GetKeyValueFromConfFile(const char * confFileName, const char *sectionName,const char* key) {
+
+  FILE *fp = fopen(confFileName, "r");
+  if ( fp == NULL) return -1;
+
+  char line [132];
+  int r = -1;
+  boolean sectionFound = false;
+
+  while (fgets(line, sizeof(line), fp)) {
+
+    // Remove spaces before
+    char *p = line;
+    while (isspace (*p)) p++;
+
+    // Empty line or comments
+    if ( p[0] == '\0' || p[0] == "#" || p[0] == ";" ) continue;
+
+    // Remove spaces after
+    for (int i = strlen (p) - 1; (isspace (p[i]));  i--) ;
+    p[i + 1] = '\0';
+
+    // A section ?
+
+    if ( p[0] == '[' && p[strlen(p)-1] == ']' ) {
+      if ( strncmp(p[1],section,strlen(p-2) ) == 0 ) {
+        sectionFound = true;
+        continue;
+      }
+    }
+
+    // Section was already found : read the value of the key
+    if ( SectionFound ) {
+
+      if ( strncmp(p,key,strlen(key)) && p[strlen(key)] == '='  ) {
+        p = &p[strlen(key) + 1 ];
+        r = atoi(p);
+      }
+    }
+  }
+
+  fclose(fp);
+
+  return r;
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 // Get an ALSA sequencer client containing a name
 ///////////////////////////////////////////////////////////////////////////////
@@ -323,6 +373,9 @@ static void tkgl_init()
 	orig_snd_rawmidi_write          = dlsym(RTLD_NEXT, "snd_rawmidi_write");
 	orig_snd_seq_create_simple_port = dlsym(RTLD_NEXT, "snd_seq_create_simple_port");
 	orig_snd_midi_event_decode      = dlsym(RTLD_NEXT, "snd_midi_event_decode");
+
+
+  GetKeyValueFromConfFile("test","test","test");
 
 	// Initialize card id for public and private
 	mpc_midi_card = GetCardFromShortName(CTRL_MPC_ALL);
