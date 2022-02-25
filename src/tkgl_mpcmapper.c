@@ -251,8 +251,6 @@ static int GetKeyValueFromConfFile(const char * confFileName, const char *sectio
 
   while (fgets(line, sizeof(line), fp)) {
 
-      //fprintf(stdout,"[tkgl]  read line : %s\n",line);
-
     // Remove spaces before
     p = line;
     while (isspace (*p)) p++;
@@ -265,17 +263,25 @@ static int GetKeyValueFromConfFile(const char * confFileName, const char *sectio
     p[i + 1] = '\0';
 
     // A section ?
-    if ( p[0] == '[' && p[strlen(p) - 1 ] == ']' ) {
+    if ( p[0] == '[' )  {
 
-      if ( strncmp(p + 1,sectionName,strlen(p)-2 ) == 0 ) {
-        withinMySection = true;
-        //fprintf(stdout,"[tkgl]  Section %s found.\n",sectionName);
+      if ( p[strlen(p) - 1 ] == ']' ) {
+        withinMySection = ( strncmp(p + 1,sectionName,strlen(p)-2 ) == 0 ) ;
+        //tklog_debug("Section detected.  %s \n",withinMySection? sectionName:"ignored");
+        continue;
       }
-      continue;
+      else {
+        tklog_error("Error in Configuration file : ']' missing : %s. \n",line);
+        return -1; // Syntax error
+
+      }
+
     }
+
 
     // Section was already found : read the value of the key
     if ( withinMySection ) {
+          //tklog_debug("Configuration file read line in searched section  : %s\n",line);
       // Next section  ? stop
       if ( p[0] == '[' ) break;
 
@@ -337,13 +343,8 @@ static void LoadMappingFromConfFile(const char * confFileName) {
 
   // Section name strings
   char btLedMapSectionName[64];
-  char ctrlMapSectionName[64];
-
   char btLedSrcSectionName[64];
-  char ctrlSrcSectionName[64];
-
   char btLedDestSectionName[64];
-  char ctrlDestSectionName[64];
 
   // Keys and values
   char srcKeyName[64];
@@ -371,14 +372,9 @@ static void LoadMappingFromConfFile(const char * confFileName) {
   if ( confFileName == NULL ) return ;  // No config file ...return
 
   // Make section names
-  sprintf(btLedMapSectionName,"Map_%s_%s_ButtonsLeds", ProductStrShort,currProductStrShort);
-  sprintf(ctrlMapSectionName, "Map_%s_%s_Controls",    ProductStrShort,currProductStrShort);
-
-  sprintf(btLedSrcSectionName,"%s_ButtonsLeds",ProductStrShort);
-  sprintf(ctrlSrcSectionName,"%s_Controls",    ProductStrShort);
-
-  sprintf(btLedDestSectionName,"%s_ButtonsLeds",currProductStrShort);
-  sprintf(ctrlDestSectionName,"%s_Controls",    currProductStrShort);
+  sprintf(btLedMapSectionName,"Map_%s_%s", ProductStrShort,currProductStrShort);
+  sprintf(btLedSrcSectionName,"%s_Controller",ProductStrShort);
+  sprintf(btLedDestSectionName,"%s_Controller",currProductStrShort);
 
 
   // Get keys of the mapping section. You need to pass the key max len string corresponding
@@ -423,19 +419,19 @@ static void LoadMappingFromConfFile(const char * confFileName) {
       continue;
     }
     // Mapped button name
-    // Check if the reserved keyword "SHIFT_" is present
+    // Check if the reserved keyword "(SHIFT)_" is present
     // Shift mode of a src button
     bool srcShift = false;
-    if ( strncmp(srcKeyName,"SHIFT_",6) == 0 )  {
+    if ( strncmp(srcKeyName,"(SHIFT)_",8) == 0 )  {
         srcShift = true;
-        strcpy(srcKeyName, &srcKeyName[6] );
+        strcpy(srcKeyName, &srcKeyName[8] );
     }
 
     strcpy(destKeyName,myValue);
     bool destShift = false;
-    if ( strncmp(destKeyName,"SHIFT_",6) == 0 )  {
+    if ( strncmp(destKeyName,"(SHIFT)_",8) == 0 )  {
         destShift = true;
-        strcpy(destKeyName, &destKeyName[6] );
+        strcpy(destKeyName, &destKeyName[8] );
     }
 
     // Read value in original device section
@@ -464,11 +460,11 @@ static void LoadMappingFromConfFile(const char * confFileName) {
       map_ButtonsLeds[srcButtonValue]      = destButtonValue;
       map_ButtonsLeds_Inv[destButtonValue] = srcButtonValue;
 
-      tklog_info("Button-Led %s%s (%d) mapped to %s%s (%d)\n",srcShift?"(SHIFT) ":"",srcKeyName,srcButtonValue,destShift?"(SHIFT) ":"",destKeyName,map_ButtonsLeds[srcButtonValue]);
+      tklog_info("Item %s%s (%d) mapped to %s%s (%d)\n",srcShift?"(SHIFT) ":"",srcKeyName,srcButtonValue,destShift?"(SHIFT) ":"",destKeyName,map_ButtonsLeds[srcButtonValue]);
 
     }
     else {
-      tklog_error("Configuration file Error : values above 127 found. Check sections [%s] %s, [%s] %s.\n",btLedSrcSectionName,srcKeyName,btLedDestSectionName,destKeyName);
+      tklog_error("Configuration file Error : values above 127 / 0x7F found. Check sections [%s] %s, [%s] %s.\n",btLedSrcSectionName,srcKeyName,btLedDestSectionName,destKeyName);
       return;
     }
 
@@ -530,7 +526,6 @@ void SetPadColorFromColorInt(const uint8_t mpcId, const uint8_t padNumber, const
 
 }
 
-
 ///////////////////////////////////////////////////////////////////////////////
 // Get an ALSA sequencer client containing a name
 ///////////////////////////////////////////////////////////////////////////////
@@ -568,7 +563,6 @@ int GetSeqClientFromPortName(const char * name) {
 	snd_seq_close(seq);
 	return  -1;
 }
-
 
 ///////////////////////////////////////////////////////////////////////////////
 // Get the last port ALSA sequencer client
@@ -705,7 +699,6 @@ const char * GetHwNameFromMPCId(uint8_t id){
 	else return NULL;
 }
 
-
 ///////////////////////////////////////////////////////////////////////////////
 // Show MPCMAPPER HELP
 ///////////////////////////////////////////////////////////////////////////////
@@ -726,7 +719,6 @@ void ShowHelp(void) {
   tklog_info("\n") ;
   exit(0);
 }
-
 
 ///////////////////////////////////////////////////////////////////////////////
 // Setup tkgl anyctrl
@@ -905,7 +897,6 @@ static void ShowBufferHexDump(const uint8_t* data, size_t sz, uint8_t nl)
     }
 }
 
-
 ////////////////////////////////////////////////////////////////////////////////
 // RawMidi dump
 ////////////////////////////////////////////////////////////////////////////////
@@ -918,7 +909,6 @@ static void RawMidiDump(snd_rawmidi_t *rawmidi, char io,char rw,const uint8_t* d
   tklog_trace("\n");
 
 }
-
 
 ///////////////////////////////////////////////////////////////////////////////
 // MPC Main hook
@@ -1093,7 +1083,6 @@ int snd_rawmidi_open(snd_rawmidi_t **inputp, snd_rawmidi_t **outputp, const char
 	return orig_snd_rawmidi_open(inputp, outputp, name, mode);
 }
 
-
 ///////////////////////////////////////////////////////////////////////////////
 // Refresh MPC pads colors from Force PAD Colors cache
 ///////////////////////////////////////////////////////////////////////////////
@@ -1216,26 +1205,15 @@ static size_t Mpc_MapReadFromForce(void *midiBuffer, size_t maxSize,size_t size)
         // SHIFT pressed/released (nb the SHIFT button can't be mapped)
         // Double click on SHIFT is not managed at all. Avoid it.
         if ( myBuff[i+1] == SHIFT_KEY_VALUE ) {
-
-            // Released, refresh pad cache
-            if ( myBuff[i+2] == 0x00 ) {
-              shiftHoldedMode = false;
-              //Mpc_ResfreshPadsColorFromForceCache(MPCPad_OffsetL,MPCPad_OffsetC,4);
-              // But keep quadran is still holding bank key
-              //if ( ForceColumnMode >= 0 ) Mpc_ShowForceMatrixQuadran(MPCPad_OffsetL, MPCPad_OffsetC);
-            }
-
-            // Pressed. Show shift-pad functions
-            else if ( myBuff[i+2] == 0x7F ) {
-              shiftHoldedMode = true;
-              //Mpc_ShowForceMatrixQuadran(MPCPad_OffsetL, MPCPad_OffsetC);
-            }
+            shiftHoldedMode = ( myBuff[i+2] == 0x7F ? true : false );
+            // Kill the shift  event because we want to manage this here and not let
+            // the MPC app to know that shift is pressed
+            //PrepareFakeMidiMsg(&myBuff[i]);
             i +=3 ;
             continue ; // next msg
         }
 
-        //tklog_debug("Shift + key mode is %s \n",shiftHoldedMode ? "active":"inactive");
-
+        tklog_debug("Shift + key mode is %s \n",shiftHoldedMode ? "active":"inactive");
 
         // Exception : Qlink management is hard coded
         // SHIFT "KNOB TOUCH" button :  add the offset when possible
@@ -1268,16 +1246,33 @@ static size_t Mpc_MapReadFromForce(void *midiBuffer, size_t maxSize,size_t size)
 
         tklog_debug("Mapping found for 0x%02x : 0x%02x \n",myBuff[i+1],mapValue);
 
-        // Insert shift press key or release key at destination ?
-        if ( ( !shiftHoldedMode && mapValue >= 0x80 ) ||  ( shiftHoldedMode && mapValue < 0x80 ) ) {
-          if ( size > maxSize - 3 ) fprintf(stdout,"Warning : midi buffer overflow when inserting SHIFT key press/release !!\n");
-          memcpy( &myBuff[i + 3 ], &myBuff[i], size - i );
-          size +=3;
-          myBuff[i + 1] = SHIFT_KEY_VALUE ; myBuff[i + 2] = ( shiftHoldedMode ? 0x00 : 0x7F ) ; // Button SHIFT released / pressed
-          i += 3;
-          mapValue -= 0x80; // Now, map our Key without the shift flag
-          tklog_debug("Shift %s inserted - Final map value %d (0x%02x) \n", (myBuff[i + 2] == 0x7F  ? "press":"release" ),mapValue) ;
+
+        // Manage shift mapping at destination
+        // Not a shift mapping.  Disable the current shift mode
+        if (  mapValue < 0x80  )  {
+          if ( myBuff[i + 2] ==  0x7f ) { // Key press
+              if ( shiftHoldedMode) {
+                if ( size > maxSize - 3 ) fprintf(stdout,"Warning : midi buffer overflow when inserting SHIFT key release !!\n");
+                memcpy( &myBuff[i + 3 ], &myBuff[i], size - i );
+                size +=3;
+                myBuff[i + 1] = SHIFT_KEY_VALUE ;   myBuff[i + 2] =  0x00 ; // Button SHIFT release insert
+                i += 3 ;
+              }
+          }
         }
+        else { // Shift at destination
+          if ( myBuff[i + 2] ==  0x7f ) { // Key press
+            if ( ! shiftHoldedMode) {
+              if ( size > maxSize - 3 ) fprintf(stdout,"Warning : midi buffer overflow when inserting SHIFT key press !!\n");
+              memcpy( &myBuff[i + 3 ], &myBuff[i], size - i );
+              size +=3;
+              myBuff[i + 1] = SHIFT_KEY_VALUE ;   myBuff[i + 2] =  0x07 ; // Button SHIFT press insert
+              i += 3 ;
+            }
+          }
+          mapValue -= 0x80 ;
+        }
+
 
         // Key press Post mapping
         // Activate the special column mode when Force spoofed on a MPC
@@ -1299,9 +1294,6 @@ static size_t Mpc_MapReadFromForce(void *midiBuffer, size_t maxSize,size_t size)
             break;
         }
         myBuff[i + 1] = mapValue ;
-
-        tklog_debug("Force column mode = %d \n", ForceColumnMode) ;
-
 
         i += 3;
         continue; // next msg
@@ -1610,7 +1602,7 @@ static void Mpc_MapAppWriteToForce(const void *midiBuffer, size_t size) {
             PadSysexColorsCache[padF].g = myBuff[i + 2 ];
             PadSysexColorsCache[padF].b = myBuff[i + 3 ];
 
-            tklog_debug("Setcolor for Force pad %d (%d,%d)  %02x%02x%02x\n",padF,padL,padC,myBuff[i + 1 ],myBuff[i + 2 ],myBuff[i + 3 ]);
+            //tklog_debug("Setcolor for Force pad %d (%d,%d)  %02x%02x%02x\n",padF,padL,padC,myBuff[i + 1 ],myBuff[i + 2 ],myBuff[i + 3 ]);
 
             // Transpose Force pad to Mpc pad in the 4x4 current quadran
             if ( padL >= MPCPad_OffsetL && padL < MPCPad_OffsetL + 4 ) {
@@ -1625,7 +1617,7 @@ static void Mpc_MapAppWriteToForce(const void *midiBuffer, size_t size) {
             if ( padL == 8 && !shiftHoldedMode && ForceColumnMode >= 0   ) refreshMutePadLine = true;
             else if ( ( padL == 8 || padL == 9 ) && shiftHoldedMode && ForceColumnMode < 0   ) refreshOptionPadLines = true;
 
-            tklog_debug("Mpc pad transposed : %d \n",padM);
+            //tklog_debug("Mpc pad transposed : %d \n",padM);
 
             // Update the pad# in the midi buffer
             myBuff[i] = padM;
