@@ -1220,21 +1220,21 @@ static size_t Mpc_MapReadFromForce(void *midiBuffer, size_t maxSize,size_t size)
             // Released, refresh pad cache
             if ( myBuff[i+2] == 0x00 ) {
               shiftHoldedMode = false;
-              Mpc_ResfreshPadsColorFromForceCache(MPCPad_OffsetL,MPCPad_OffsetC,4);
+              //Mpc_ResfreshPadsColorFromForceCache(MPCPad_OffsetL,MPCPad_OffsetC,4);
               // But keep quadran is still holding bank key
-              if ( ForceColumnMode >= 0 ) Mpc_ShowForceMatrixQuadran(MPCPad_OffsetL, MPCPad_OffsetC);
+              //if ( ForceColumnMode >= 0 ) Mpc_ShowForceMatrixQuadran(MPCPad_OffsetL, MPCPad_OffsetC);
             }
 
             // Pressed. Show shift-pad functions
             else if ( myBuff[i+2] == 0x7F ) {
               shiftHoldedMode = true;
-              Mpc_ShowForceMatrixQuadran(MPCPad_OffsetL, MPCPad_OffsetC);
+              //Mpc_ShowForceMatrixQuadran(MPCPad_OffsetL, MPCPad_OffsetC);
             }
             i +=3 ;
             continue ; // next msg
         }
 
-        tklog_debug("Shift + key mode is %s \n",shiftHoldedMode ? "active":"inactive");
+        //tklog_debug("Shift + key mode is %s \n",shiftHoldedMode ? "active":"inactive");
 
 
         // Exception : Qlink management is hard coded
@@ -1246,14 +1246,14 @@ static size_t Mpc_MapReadFromForce(void *midiBuffer, size_t maxSize,size_t size)
             if (  shiftHoldedMode && DeviceInfoBloc[MPCOriginalId].qlinkKnobsCount < 16 )
                 myBuff[i+1] += DeviceInfoBloc[MPCOriginalId].qlinkKnobsCount;
 
-            tklog_debug("Qlink 0x%02x touch\n",myBuff[i+1] );
+            //tklog_debug("Qlink 0x%02x touch\n",myBuff[i+1] );
 
             i += 3 ;
             continue ; // next msg
         }
 
         // Simple key press
-        tklog_debug("Mapping for %d = %d - shift = %d \n", myBuff[i+1], map_ButtonsLeds[ myBuff[i+1] ],map_ButtonsLeds[ myBuff[i+1] +  0x80 ] );
+        //tklog_debug("Mapping for %d = %d - shift = %d \n", myBuff[i+1], map_ButtonsLeds[ myBuff[i+1] ],map_ButtonsLeds[ myBuff[i+1] +  0x80 ] );
 
         int mapValue = map_ButtonsLeds[ myBuff[i+1] + ( shiftHoldedMode ? 0x80 : 0)  ];
 
@@ -1319,8 +1319,6 @@ static size_t Mpc_MapReadFromForce(void *midiBuffer, size_t maxSize,size_t size)
         // Compute the Force pad id without offset
         uint8_t padF = ( 3 - padL + MPCPad_OffsetL ) * 8 + padC + MPCPad_OffsetC ;
 
-
-
         if (  shiftHoldedMode || ForceColumnMode >= 0  ) {
           // Ignore aftertouch in special pad modes
           if ( myBuff[i] == 0xA9 ) {
@@ -1329,11 +1327,9 @@ static size_t Mpc_MapReadFromForce(void *midiBuffer, size_t maxSize,size_t size)
               continue; // next msg
           }
 
-          //tklog_debug("Pad pressed %d (l,c=%d,%d) mode = %d (0x%02x) \n", padF,padL,padC,ForceColumnMode,ForceColumnMode) ;
-
           // Check if  columns solo mute mode on first pad line
           if ( ForceColumnMode >= 0 &&  padL == 3  ) {
-            tklog_debug("Pad pressed in Force column mode = %d (0x%02x) \n", ForceColumnMode,ForceColumnMode) ;
+            tklog_debug("Mpc Pad pressed in Force column mode = %d (0x%02x) \n", ForceColumnMode,ForceColumnMode) ;
             // Replace the pad midi msg by the "column" button event press or release
             myBuff[i+2] = ( myBuff[i] == 0x99 ? 0x7F:0x00 ) ;
             myBuff[i]   = 0x90; // MPC Button
@@ -1343,70 +1339,70 @@ static size_t Mpc_MapReadFromForce(void *midiBuffer, size_t maxSize,size_t size)
             continue; // next msg
           }
 
-          bool matchedKey = true;
+          uint8_t navFunc = 1;
+          uint8_t buttonValue = 0x7F;
 
-          // Check if SHIFT only is holded
-          if ( shiftHoldedMode  ) {
-            uint8_t buttonValue = 0x7F;
+          switch (padM) {
+            // Matrix Navigation left Right  Up Down
+            case 9:
+              buttonValue = FORCE_LEFT;
+              break;
+            case 11:
+              buttonValue = FORCE_RIGHT;
+              break;
+            case 14:
+              buttonValue = FORCE_UP;
+              break;
+            case 10:
+              buttonValue = FORCE_DOWN;
+              break;
+            default:
+              navFunc++;
+              switch (padM) {
+                // PAd as quadran
+                case 6:
+                  MPCPad_OffsetL = MPCPad_OffsetC = 0;
+                  break;
+                case 7:
+                  MPCPad_OffsetL = 0;
+                  MPCPad_OffsetC = 4;
+                  break;
+                case 2:
+                  MPCPad_OffsetL = 4; MPCPad_OffsetC = 0;
+                  break;
+                case 3:
+                  MPCPad_OffsetL = 4; MPCPad_OffsetC = 4;
+                  break;
+                default:
+                  navFunc++;
+                  PrepareFakeMidiMsg(&myBuff[i]);
+                  i += 3;
+                  continue; // next msg
+              }
+          }
 
-            // LAUNCH ROW -------------------
-            // SHIFT + PAD  in column 0 = Launch the corresponding line
-            // LAUNCH_1=56
-            // Replace the midi pad note on by a button on/off
-            if ( padC == 0 ) buttonValue = padF / 8 + 56; // Launch line
-
-            // MATRIX NAVIGATE ------------------------
-            // Navigte in the matrix with shift + Pads
-            // 12     13      ( Up 15  )   16
-            // 08 (Left 09 ) ( Down 10) (Right 11)
-            else if (padM == 9  )  buttonValue = FORCE_LEFT;
-            else if (padM == 11  ) buttonValue = FORCE_RIGHT;
-            else if (padM == 14  ) buttonValue = FORCE_UP;
-            else if (padM == 10  ) buttonValue = FORCE_DOWN;
-            else matchedKey = false;
-
-            // Simulate a button press/release
-            if ( matchedKey ) {
+          // Shift + pad = Simulate a button press/release to navigate in the matrix
+          if ( navFunc == 1 && shiftHoldedMode  )  {
+              tklog_debug("Matrix nav = %d \n", buttonValue) ;
               myBuff[i+2] = ( myBuff[i] == 0x99 ? 0x7F:0x00 ) ;
               myBuff[i]   = 0x90; // MPC Button
               myBuff[i+1] = buttonValue;
               i += 3;
               continue; // next msg
-            }
           }
 
-          // Navigate in the Force quadrans
-          // Column mode key or shift to navigate in quadrans
-          // 04 05 (06 Left top quadran   ) (07 right top    quadran)
-          // 00 01 (02 Left bottom quadran) (03 right bottom quadran)
-          // Top Left
-          matchedKey = true ;
-
-          if (padM == 6  ) {
-            MPCPad_OffsetL = MPCPad_OffsetC = 0;
-          }
-          // Top Right
-          else if (padM == 7  ) {
-            MPCPad_OffsetL = 0; MPCPad_OffsetC = 4;
-          }
-          // bottom left
-          else if (padM == 2 ) {
-            MPCPad_OffsetL = 4; MPCPad_OffsetC = 0;
-          }
-          // bottom right
-          else if (padM == 3 ) {
-            MPCPad_OffsetL = 4; MPCPad_OffsetC = 4;
-          }
-          else matchedKey = false ;
-
-          // Update the MPC pad colors from Force pad colors cache
-          if ( matchedKey )  {
+          // Shift + pad as quadran
+          if ( navFunc == 2 && ForceColumnMode >= 0 && ! shiftHoldedMode )  {
+            tklog_debug("Quadran nav = %d \n", buttonValue) ;
             Mpc_ResfreshPadsColorFromForceCache(MPCPad_OffsetL,MPCPad_OffsetC,4);
-            if ( ForceColumnMode >= 0 ) Mpc_ShowForceMatrixQuadran(MPCPad_OffsetL, MPCPad_OffsetC);
+            Mpc_ShowForceMatrixQuadran(MPCPad_OffsetL, MPCPad_OffsetC);
+            PrepareFakeMidiMsg(&myBuff[i]);
             i += 3;
-            continue; // Next msg
+            continue; // next msg
+
           }
 
+          // Should not be here
           PrepareFakeMidiMsg(&myBuff[i]);
 
         }
@@ -1587,6 +1583,7 @@ static void Mpc_MapAppWriteToForce(const void *midiBuffer, size_t size) {
   uint8_t * myBuff = (uint8_t*)midiBuffer;
 
   bool refreshMutePadLine = false;
+  bool refreshOptionPadLines = false;
 
   size_t i = 0 ;
   while  ( i < size ) {
@@ -1610,7 +1607,6 @@ static void Mpc_MapAppWriteToForce(const void *midiBuffer, size_t size) {
             uint8_t padC = padF % 8 ;
             uint8_t padM = 0x7F ;
 
-
             // Update Force pad color cache
             PadSysexColorsCache[padF].r = myBuff[i + 1 ];
             PadSysexColorsCache[padF].g = myBuff[i + 2 ];
@@ -1626,7 +1622,10 @@ static void Mpc_MapAppWriteToForce(const void *midiBuffer, size_t size) {
             }
 
             // Take care of the pad mutes mode line 0 on the MPC, line 8 on Force
+            // Shift must not be pressed else it shows the sub option of lines 8/9
+            // and not the state of solo/mut/rec arm etc...
             if ( padL == 8 && !shiftHoldedMode && ForceColumnMode >= 0   ) refreshMutePadLine = true;
+            else if ( ( padL == 8 || padL == 9 ) && shiftHoldedMode && ForceColumnMode < 0   ) refreshOptionPadLines = true;
 
             tklog_debug("Mpc pad transposed : %d \n",padM);
 
@@ -1655,6 +1654,14 @@ static void Mpc_MapAppWriteToForce(const void *midiBuffer, size_t size) {
 
   // Check if mute pad line changed
   if ( refreshMutePadLine ) Mpc_DrawPadLineFromForceCache(8, MPCPad_OffsetC, 3);
+  else if ( refreshOptionPadLines ) {
+
+    // Mpc_DrawPadLineFromForceCache(9, 0, 3);
+    // Mpc_DrawPadLineFromForceCache(9, 4, 3);
+    // Mpc_DrawPadLineFromForceCache(8, 0, 2);
+    // Mpc_DrawPadLineFromForceCache(8, 4, 2);
+
+  }
 
 }
 
