@@ -1327,63 +1327,60 @@ static size_t Mpc_MapReadFromForce(void *midiBuffer, size_t maxSize,size_t size)
               continue; // next msg
           }
 
-          // Check if  columns solo mute mode on first pad line
-          if ( ForceColumnMode >= 0 &&  padL == 3  ) {
-            tklog_debug("Mpc Pad pressed in Force column mode = %d (0x%02x) \n", ForceColumnMode,ForceColumnMode) ;
-            // Replace the pad midi msg by the "column" button event press or release
-            myBuff[i+2] = ( myBuff[i] == 0x99 ? 0x7F:0x00 ) ;
-            myBuff[i]   = 0x90; // MPC Button
-            // Pads botom line  90 29-30 00/7f
-            myBuff[i+1] = 0x29 + padC + MPCPad_OffsetC;
-            i += 3;
-            continue; // next msg
-          }
-
-          uint8_t navFunc = 1;
           uint8_t buttonValue = 0x7F;
+          uint8_t offsetC = MPCPad_OffsetC;
+          uint8_t offsetL = MPCPad_OffsetL;
+
+          // Columns solo mute mode on first pad line
+          if ( ForceColumnMode >= 0 &&  padL == 3  ) padM = 0x7F ; // Simply to pass in the switch case
+          // LAUNCH ROW SHIFT + PAD  in column 0 = Launch the corresponding line
+          else if ( shiftHoldedMode && padC == 0 ) padM = 0x7E ; // Simply to pass in the switch case
 
           switch (padM) {
-            // Matrix Navigation left Right  Up Down
+            // COlumn pad mute,solo   Pads botom line  90 29-30 00/7f
+            case 0x7F:
+              buttonValue = 0x29 + padC + MPCPad_OffsetC;
+              break;
+            // Launch row.
+            case 0x7E:
+              buttonValue = padF / 8 + 56; // Launch row
+              break;
+            // Matrix Navigation left Right  Up Down need shift
             case 9:
-              buttonValue = FORCE_LEFT;
+              if ( shiftHoldedMode) buttonValue = FORCE_LEFT;
               break;
             case 11:
-              buttonValue = FORCE_RIGHT;
+              if ( shiftHoldedMode) buttonValue = FORCE_RIGHT;
               break;
             case 14:
-              buttonValue = FORCE_UP;
+              if ( shiftHoldedMode) buttonValue = FORCE_UP;
               break;
             case 10:
-              buttonValue = FORCE_DOWN;
+              if ( shiftHoldedMode) buttonValue = FORCE_DOWN;
+              break;
+            // PAd as quadran
+            case 6:
+              if ( ForceColumnMode >= 0 ) { offsetL = offsetC = 0; }
+              break;
+            case 7:
+              if ( ForceColumnMode >= 0 ) { offsetL = 0; offsetC = 4; }
+              break;
+            case 2:
+              if ( ForceColumnMode >= 0 ) { offsetL = 4; offsetC = 0; }
+              break;
+            case 3:
+              if ( ForceColumnMode >= 0 ) { offsetL = 4; offsetC = 4; }
               break;
             default:
-              navFunc++;
-              switch (padM) {
-                // PAd as quadran
-                case 6:
-                  MPCPad_OffsetL = MPCPad_OffsetC = 0;
-                  break;
-                case 7:
-                  MPCPad_OffsetL = 0;
-                  MPCPad_OffsetC = 4;
-                  break;
-                case 2:
-                  MPCPad_OffsetL = 4; MPCPad_OffsetC = 0;
-                  break;
-                case 3:
-                  MPCPad_OffsetL = 4; MPCPad_OffsetC = 4;
-                  break;
-                default:
-                  navFunc++;
-                  PrepareFakeMidiMsg(&myBuff[i]);
-                  i += 3;
-                  continue; // next msg
-              }
+              PrepareFakeMidiMsg(&myBuff[i]);
+              i += 3;
+              continue; // next msg
           }
 
-          // Shift + pad = Simulate a button press/release to navigate in the matrix
-          if ( navFunc == 1 && shiftHoldedMode  )  {
-              tklog_debug("Matrix nav = %d \n", buttonValue) ;
+          // Simulate a button press/release
+          // to navigate in the matrix , to start a raw, to manage solo mute
+          if ( buttonValue != 0x7F )  {
+              tklog_debug("Matrix shit pad fn = %d \n", buttonValue) ;
               myBuff[i+2] = ( myBuff[i] == 0x99 ? 0x7F:0x00 ) ;
               myBuff[i]   = 0x90; // MPC Button
               myBuff[i+1] = buttonValue;
@@ -1391,15 +1388,16 @@ static size_t Mpc_MapReadFromForce(void *midiBuffer, size_t maxSize,size_t size)
               continue; // next msg
           }
 
-          // Shift + pad as quadran
-          if ( navFunc == 2 && ForceColumnMode >= 0 && ! shiftHoldedMode )  {
+          // Column button + pad as quadran
+          if ( ( MPCPad_OffsetL != offsetL )  || ( MPCPad_OffsetC != offsetC ) )  {
+            MPCPad_OffsetL = offsetL ;
+            MPCPad_OffsetC = offsetC ;
             tklog_debug("Quadran nav = %d \n", buttonValue) ;
             Mpc_ResfreshPadsColorFromForceCache(MPCPad_OffsetL,MPCPad_OffsetC,4);
             Mpc_ShowForceMatrixQuadran(MPCPad_OffsetL, MPCPad_OffsetC);
             PrepareFakeMidiMsg(&myBuff[i]);
             i += 3;
             continue; // next msg
-
           }
 
           // Should not be here
