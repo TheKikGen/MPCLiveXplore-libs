@@ -136,9 +136,6 @@ static int MPC_PadBank = BANK_A ;
 // Holding shift will activate the shift mode
 static bool shiftHoldedMode=false;
 
-// Qlink knobs shift mode
-static bool QlinkKnobsShiftMode=false;
-
 // Columns modes in Force simulated on a MPC
 static int ForceColumnMode = -1 ;
 
@@ -188,11 +185,13 @@ static int seqvirt_client_outpub  = -1;
 
 // Alsa API hooks declaration
 static typeof(&snd_rawmidi_open) orig_snd_rawmidi_open;
+static typeof(&snd_rawmidi_close) orig_snd_rawmidi_close;
 static typeof(&snd_rawmidi_read) orig_snd_rawmidi_read;
 static typeof(&snd_rawmidi_write) orig_snd_rawmidi_write;
 static typeof(&snd_seq_create_simple_port) orig_snd_seq_create_simple_port;
 static typeof(&snd_midi_event_decode) orig_snd_midi_event_decode;
 static typeof(&snd_seq_open) orig_snd_seq_open;
+static typeof(&snd_seq_close) orig_snd_seq_close;
 static typeof(&snd_seq_port_info_set_name) orig_snd_seq_port_info_set_name;
 //static typeof(&snd_seq_event_input) orig_snd_seq_event_input;
 
@@ -393,17 +392,6 @@ static void LoadMappingFromConfFile(const char * confFileName) {
     return;
   }
 
-  // Get Globals within the mapping section name of the current device
-  if ( GetKeyValueFromConfFile(confFileName, btLedMapSectionName,"_p_QlinkKnobsShiftMode",myValue,NULL,0) ) {
-
-    QlinkKnobsShiftMode = ( atoi(myValue) == 1 ? true:false );
-    if ( QlinkKnobsShiftMode) tklog_info("QlinkKnobsShiftMode was set to 1.\n");
-
-  } else {
-    QlinkKnobsShiftMode = false; // default
-    tklog_warn("Missing _p_QlinkKnobsShiftMod key in section . Was set to 0 by default.\n");
-  }
-
   // Read the Buttons & Leds mapping section entries
   for ( int i = 0 ; i < keysCount ; i++ ) {
 
@@ -460,7 +448,7 @@ static void LoadMappingFromConfFile(const char * confFileName) {
       map_ButtonsLeds[srcButtonValue]      = destButtonValue;
       map_ButtonsLeds_Inv[destButtonValue] = srcButtonValue;
 
-      tklog_info("Item %s%s (%d) mapped to %s%s (%d)\n",srcShift?"(SHIFT) ":"",srcKeyName,srcButtonValue,destShift?"(SHIFT) ":"",destKeyName,map_ButtonsLeds[srcButtonValue]);
+      tklog_info("Item %s%s (%d/0x%02X) mapped to %s%s (%d/0x%02X)\n",srcShift?"(SHIFT) ":"",srcKeyName,srcButtonValue,srcButtonValue,destShift?"(SHIFT) ":"",destKeyName,map_ButtonsLeds[srcButtonValue],map_ButtonsLeds[srcButtonValue]);
 
     }
     else {
@@ -535,7 +523,7 @@ int GetSeqClientFromPortName(const char * name) {
 	char port_name[128];
 
 	snd_seq_t *seq;
-	if (orig_snd_seq_open(&seq, "default", SND_SEQ_OPEN_DUPLEX, 0) < 0) {
+	if (snd_seq_open(&seq, "default", SND_SEQ_OPEN_DUPLEX, 0) < 0) {
 		fprintf(stderr,"*** Error : impossible to open default seq\n");
 		return -1;
 	}
@@ -572,7 +560,7 @@ int GetLastPortSeqClient() {
 	int r = -1;
 
 	snd_seq_t *seq;
-	if (orig_snd_seq_open(&seq, "default", SND_SEQ_OPEN_DUPLEX, 0) < 0) {
+	if (snd_seq_open(&seq, "default", SND_SEQ_OPEN_DUPLEX, 0) < 0) {
 		fprintf(stderr,"*** Error : impossible to open default seq\n");
 		return -1;
 	}
@@ -623,7 +611,7 @@ int aconnect(int src_client, int src_port, int dest_client, int dest_port) {
 	char addr[10];
 
 	snd_seq_t *seq;
-	if (orig_snd_seq_open(&seq, "default", SND_SEQ_OPEN_DUPLEX, 0) < 0) {
+	if (snd_seq_open(&seq, "default", SND_SEQ_OPEN_DUPLEX, 0) < 0) {
 		tklog_error("Impossible to open default seq\n");
 		return -1;
 	}
@@ -734,11 +722,13 @@ static void tkgl_init()
 
 	// Alsa hooks
 	orig_snd_rawmidi_open           = dlsym(RTLD_NEXT, "snd_rawmidi_open");
+  orig_snd_rawmidi_close          = dlsym(RTLD_NEXT, "snd_rawmidi_close");
 	orig_snd_rawmidi_read           = dlsym(RTLD_NEXT, "snd_rawmidi_read");
 	orig_snd_rawmidi_write          = dlsym(RTLD_NEXT, "snd_rawmidi_write");
 	orig_snd_seq_create_simple_port = dlsym(RTLD_NEXT, "snd_seq_create_simple_port");
 	orig_snd_midi_event_decode      = dlsym(RTLD_NEXT, "snd_midi_event_decode");
   orig_snd_seq_open               = dlsym(RTLD_NEXT, "snd_seq_open");
+  orig_snd_seq_close              = dlsym(RTLD_NEXT, "snd_seq_close");
   orig_snd_seq_port_info_set_name = dlsym(RTLD_NEXT, "snd_seq_port_info_set_name");
   //orig_snd_seq_event_input        = dlsym(RTLD_NEXT, "snd_seq_event_input");
 
@@ -829,7 +819,6 @@ static void tkgl_init()
 	tklog_info("Virtual private output port %d created.\n",seqvirt_client_outpriv);
 	tklog_info("Virtual public output port %d created.\n",seqvirt_client_outpub);
 
-
   // Make connections of our virtuals ports
   // MPC APP <---> VIRTUAL PORTS <---> MPC CONTROLLER PRIVATE & PUBLIC PORTS
 
@@ -854,7 +843,6 @@ static void tkgl_init()
 		// Virtual out public to our controller port 0
 		aconnect(	seqvirt_client_outpub, 0, seqanyctrl_client, 0);
 	}
-
 
   // Create a user virtual port if asked on the command line
 
@@ -1017,8 +1005,12 @@ int __libc_start_main(
     // Initialize everything
     tkgl_init();
 
+    int r =  orig(main, argc, argv, init, fini, rtld_fini, stack_end);
+
+    tklog_info("End of mcpmapper\n" ) ;
+
     // ... and call main again
-    return orig(main, argc, argv, init, fini, rtld_fini, stack_end);
+    return r ;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -1031,7 +1023,7 @@ int __libc_start_main(
 int snd_rawmidi_open(snd_rawmidi_t **inputp, snd_rawmidi_t **outputp, const char *name, int mode)
 {
 
-	//tklog_info("snd_rawmidi_open name %s mode %d\n",name,mode);
+	tklog_info("snd_rawmidi_open name %s mode %d\n",name,mode);
 
   // Rename the virtual port as we need
   // Port Name must not be emtpy - 30 chars max
@@ -1082,6 +1074,20 @@ int snd_rawmidi_open(snd_rawmidi_t **inputp, snd_rawmidi_t **outputp, const char
 
 	return orig_snd_rawmidi_open(inputp, outputp, name, mode);
 }
+
+///////////////////////////////////////////////////////////////////////////////
+// ALSA snd_rawmidi_close hooked
+///////////////////////////////////////////////////////////////////////////////
+//
+
+int snd_rawmidi_close	(	snd_rawmidi_t * 	rawmidi	)
+{
+
+	tklog_info("snd_rawmidi_close handle :%p\n",rawmidi);
+
+	return orig_snd_rawmidi_close(rawmidi);
+}
+
 
 ///////////////////////////////////////////////////////////////////////////////
 // Refresh MPC pads colors from Force PAD Colors cache
@@ -1432,7 +1438,7 @@ static size_t Mpc_MapReadFromMpc(void *midiBuffer, size_t maxSize,size_t size) {
       // KNOBS TURN ------------------------------------------------------------
       else
       if (  myBuff[i] == 0xB0 ) {
-        if ( shiftHoldedMode && QlinkKnobsShiftMode && DeviceInfoBloc[MPCOriginalId].qlinkKnobsCount < 16
+        if ( shiftHoldedMode && DeviceInfoBloc[MPCOriginalId].qlinkKnobsCount < 16
                   && myBuff[i+1] >= 0x10 && myBuff[i+1] <= 0x31 )
             myBuff[i+1] +=  DeviceInfoBloc[MPCOriginalId].qlinkKnobsCount;
         i += 3;
@@ -1453,7 +1459,7 @@ static size_t Mpc_MapReadFromMpc(void *midiBuffer, size_t maxSize,size_t size) {
 
           // KNOB TOUCH : If it's a shift + knob "touch", add the offset
           // 90 [54-63] 7F
-          if ( QlinkKnobsShiftMode && DeviceInfoBloc[MPCOriginalId].qlinkKnobsCount < 16
+          if ( DeviceInfoBloc[MPCOriginalId].qlinkKnobsCount < 16
                   && myBuff[i+1] >= 0x54 && myBuff[i+1] <= 0x63 )
                  myBuff[i+1] += DeviceInfoBloc[MPCOriginalId].qlinkKnobsCount;
 
@@ -1698,7 +1704,7 @@ static size_t Force_MapReadFromForce(void *midiBuffer, size_t maxSize,size_t siz
 
           // KNOB TOUCH : If it's a shift + knob "touch", add the offset
           // 90 [54-63] 7F
-          if ( QlinkKnobsShiftMode && DeviceInfoBloc[MPCOriginalId].qlinkKnobsCount < 16
+          if ( DeviceInfoBloc[MPCOriginalId].qlinkKnobsCount < 16
                   && myBuff[i+1] >= 0x54 && myBuff[i+1] <= 0x63 )
                  myBuff[i+1] += DeviceInfoBloc[MPCOriginalId].qlinkKnobsCount;
 
@@ -1787,7 +1793,7 @@ static size_t Force_MapReadFromMpc(void *midiBuffer, size_t maxSize,size_t size)
       else
       if (  myBuff[i] == 0xB0 ) {
         // If it's a shift + knob turn, add an offset   B0 [10-31] [7F - n]
-        if ( shiftHoldedMode && QlinkKnobsShiftMode && DeviceInfoBloc[MPCOriginalId].qlinkKnobsCount < 16
+        if ( shiftHoldedMode &&  DeviceInfoBloc[MPCOriginalId].qlinkKnobsCount < 16
                   && myBuff[i+1] >= 0x10 && myBuff[i+1] <= 0x31 ) {
 
           myBuff[i+1] +=  DeviceInfoBloc[MPCOriginalId].qlinkKnobsCount;
@@ -1813,7 +1819,7 @@ static size_t Force_MapReadFromMpc(void *midiBuffer, size_t maxSize,size_t size)
 
           // KNOB TOUCH : If it's a shift + knob "touch", add the offset   90 [54-63] 7F
           // Before the mapping
-          if ( QlinkKnobsShiftMode && DeviceInfoBloc[MPCOriginalId].qlinkKnobsCount < 16
+          if (  DeviceInfoBloc[MPCOriginalId].qlinkKnobsCount < 16
                   && myBuff[i+1] >= 0x54 && myBuff[i+1] <= 0x63 )
           {
             myBuff[i+1] += DeviceInfoBloc[MPCOriginalId].qlinkKnobsCount;
@@ -2019,8 +2025,15 @@ static void Force_MapAppWriteToForce(const void *midiBuffer, size_t size) {
 ///////////////////////////////////////////////////////////////////////////////
 ssize_t snd_rawmidi_read(snd_rawmidi_t *rawmidi, void *buffer, size_t size) {
 
+  //tklog_debug("snd_rawmidi_read %p : size : %u ", rawmidi, size);
+
 	ssize_t r = orig_snd_rawmidi_read(rawmidi, buffer, size);
-  if ( rawMidiDumpFlag ) RawMidiDump(rawmidi, 'i','r' , buffer, r);
+  if ( r < 0 ) {
+    tklog_error("snd_rawmidi_read error : (%p) size : %u  error %d\n", rawmidi, size,r);
+    return r;
+  }
+
+  if ( rawMidiDumpFlag  ) RawMidiDump(rawmidi, 'i','r' , buffer, r);
 
 
   // Map in all cases if the app writes to the controller
@@ -2104,6 +2117,17 @@ int snd_seq_open (snd_seq_t **handle, const char *name, int streams, int mode) {
   //tklog_info("snd_seq_open %s (%p) \n",name,handle);
 
   return orig_snd_seq_open(handle, name, streams, mode);
+
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// Alsa close sequencer
+///////////////////////////////////////////////////////////////////////////////
+int snd_seq_close (snd_seq_t *handle) {
+
+  //tklog_info("snd_seq_close. Hanlde %p \n",handle);
+
+  return orig_snd_seq_close(handle);
 
 }
 
