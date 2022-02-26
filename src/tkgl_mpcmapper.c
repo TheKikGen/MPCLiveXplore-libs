@@ -1023,7 +1023,7 @@ int __libc_start_main(
 int snd_rawmidi_open(snd_rawmidi_t **inputp, snd_rawmidi_t **outputp, const char *name, int mode)
 {
 
-	tklog_info("snd_rawmidi_open name %s mode %d\n",name,mode);
+	//tklog_debug("snd_rawmidi_open name %s mode %d\n",name,mode);
 
   // Rename the virtual port as we need
   // Port Name must not be emtpy - 30 chars max
@@ -1044,7 +1044,7 @@ int snd_rawmidi_open(snd_rawmidi_t **inputp, snd_rawmidi_t **outputp, const char
     r = snd_seq_virtual_port_clientid;
     snd_seq_virtual_port_clientid=-1;
 
-    //tklog_info("PORT ID IS %d\n",r);
+    //tklog_debug("PORT ID IS %d\n",r);
 
     return r;
 
@@ -1083,7 +1083,7 @@ int snd_rawmidi_open(snd_rawmidi_t **inputp, snd_rawmidi_t **outputp, const char
 int snd_rawmidi_close	(	snd_rawmidi_t * 	rawmidi	)
 {
 
-	tklog_info("snd_rawmidi_close handle :%p\n",rawmidi);
+	//tklog_debug("snd_rawmidi_close handle :%p\n",rawmidi);
 
 	return orig_snd_rawmidi_close(rawmidi);
 }
@@ -1143,7 +1143,7 @@ static void Mpc_ShowForceMatrixQuadran(uint8_t forcePadL, uint8_t forcePadC) {
         sysexBuff[9]  =  0x00 ;
         sysexBuff[10] =  0x00 ;
       }
-      //tklog_info("[tkgl] MPC Pad quadran : l,c %d,%d Pad %d r g b %02X %02X %02X\n",forcePadL,forcePadC,sysexBuff[7],sysexBuff[8],sysexBuff[9],sysexBuff[10]);
+      //tklog_debug("[tkgl] MPC Pad quadran : l,c %d,%d Pad %d r g b %02X %02X %02X\n",forcePadL,forcePadC,sysexBuff[7],sysexBuff[8],sysexBuff[9],sysexBuff[10]);
 
       orig_snd_rawmidi_write(rawvirt_outpriv,sysexBuff,sizeof(sysexBuff));
     }
@@ -1168,7 +1168,7 @@ void Mpc_DrawPadLineFromForceCache(uint8_t forcePadL, uint8_t forcePadC, uint8_t
     sysexBuff[9]  = PadSysexColorsCache[p].g;
     sysexBuff[10] = PadSysexColorsCache[p].b;
 
-    //tklog_info("[tkgl] MPC Pad Line refresh : %d r g b %02X %02X %02X\n",sysexBuff[7],sysexBuff[8],sysexBuff[9],sysexBuff[10]);
+    //tklog_debug("[tkgl] MPC Pad Line refresh : %d r g b %02X %02X %02X\n",sysexBuff[7],sysexBuff[8],sysexBuff[9],sysexBuff[10]);
 
     orig_snd_rawmidi_write(rawvirt_outpriv,sysexBuff,sizeof(sysexBuff));
   }
@@ -1206,7 +1206,7 @@ static size_t Mpc_MapReadFromForce(void *midiBuffer, size_t maxSize,size_t size)
 
       // BUTTONS PRESS / RELEASE------------------------------------------------
       if (  myBuff[i] == 0x90   ) {
-        tklog_debug("Button 0x%02x %s\n",myBuff[i+1], (myBuff[i+2] == 0x7F ? "pressed":"released") );
+        //tklog_debug("Button 0x%02x %s\n",myBuff[i+1], (myBuff[i+2] == 0x7F ? "pressed":"released") );
 
         // SHIFT pressed/released (nb the SHIFT button can't be mapped)
         // Double click on SHIFT is not managed at all. Avoid it.
@@ -1219,7 +1219,7 @@ static size_t Mpc_MapReadFromForce(void *midiBuffer, size_t maxSize,size_t size)
             continue ; // next msg
         }
 
-        tklog_debug("Shift + key mode is %s \n",shiftHoldedMode ? "active":"inactive");
+        //tklog_debug("Shift + key mode is %s \n",shiftHoldedMode ? "active":"inactive");
 
         // Exception : Qlink management is hard coded
         // SHIFT "KNOB TOUCH" button :  add the offset when possible
@@ -1245,12 +1245,12 @@ static size_t Mpc_MapReadFromForce(void *midiBuffer, size_t maxSize,size_t size)
         if ( mapValue < 0 ) {
           PrepareFakeMidiMsg(&myBuff[i]);
           i += 3 ;
-          tklog_debug("No mapping found for 0x%02x \n",myBuff[i+1]);
+          //tklog_debug("No mapping found for 0x%02x \n",myBuff[i+1]);
 
           continue ; // next msg
         }
 
-        tklog_debug("Mapping found for 0x%02x : 0x%02x \n",myBuff[i+1],mapValue);
+        //tklog_debug("Mapping found for 0x%02x : 0x%02x \n",myBuff[i+1],mapValue);
 
 
         // Manage shift mapping at destination
@@ -1378,7 +1378,7 @@ static size_t Mpc_MapReadFromForce(void *midiBuffer, size_t maxSize,size_t size)
           // Simulate a button press/release
           // to navigate in the matrix , to start a raw, to manage solo mute
           if ( buttonValue != 0x7F )  {
-              tklog_debug("Matrix shit pad fn = %d \n", buttonValue) ;
+              //tklog_debug("Matrix shit pad fn = %d \n", buttonValue) ;
               myBuff[i+2] = ( myBuff[i] == 0x99 ? 0x7F:0x00 ) ;
               myBuff[i]   = 0x90; // MPC Button
               myBuff[i+1] = buttonValue;
@@ -1390,7 +1390,7 @@ static size_t Mpc_MapReadFromForce(void *midiBuffer, size_t maxSize,size_t size)
           if ( ( MPCPad_OffsetL != offsetL )  || ( MPCPad_OffsetC != offsetC ) )  {
             MPCPad_OffsetL = offsetL ;
             MPCPad_OffsetC = offsetC ;
-            tklog_debug("Quadran nav = %d \n", buttonValue) ;
+            //tklog_debug("Quadran nav = %d \n", buttonValue) ;
             Mpc_ResfreshPadsColorFromForceCache(MPCPad_OffsetL,MPCPad_OffsetC,4);
             Mpc_ShowForceMatrixQuadran(MPCPad_OffsetL, MPCPad_OffsetC);
             PrepareFakeMidiMsg(&myBuff[i]);
@@ -1500,7 +1500,7 @@ static size_t Mpc_MapReadFromMpc(void *midiBuffer, size_t maxSize,size_t size) {
         } // Shiftmode
         else
         if ( map_ButtonsLeds[ myBuff[i+1] ] >= 0 ) {
-          //tklog_info("MAP %d->%d\n",myBuff[i+1],map_ButtonsLeds[ myBuff[i+1] ]);
+          //tklog_debug("MAP %d->%d\n",myBuff[i+1],map_ButtonsLeds[ myBuff[i+1] ]);
           myBuff[i+1] = map_ButtonsLeds[ myBuff[i+1] ];
         }
 
@@ -1562,7 +1562,7 @@ static void Mpc_MapAppWriteToMpc(const void *midiBuffer, size_t size) {
     if (  myBuff[i] == 0xB0  ) {
 
       if ( map_ButtonsLeds_Inv[ myBuff[i+1] ] >= 0 ) {
-        //tklog_info("MAP INV %d->%d\n",myBuff[i+1],map_ButtonsLeds_Inv[ myBuff[i+1] ]);
+        //tklog_debug("MAP INV %d->%d\n",myBuff[i+1],map_ButtonsLeds_Inv[ myBuff[i+1] ]);
         myBuff[i+1] = map_ButtonsLeds_Inv[ myBuff[i+1] ];
       }
       i += 3;
@@ -1639,7 +1639,7 @@ static void Mpc_MapAppWriteToForce(const void *midiBuffer, size_t size) {
     else
     if (  myBuff[i] == 0xB0  ) {
       if ( map_ButtonsLeds_Inv[ myBuff[i+1] ] >= 0 ) {
-        //tklog_info("MAP INV %d->%d\n",myBuff[i+1],map_ButtonsLeds_Inv[ myBuff[i+1] ]);
+        //tklog_debug("MAP INV %d->%d\n",myBuff[i+1],map_ButtonsLeds_Inv[ myBuff[i+1] ]);
         myBuff[i+1] = map_ButtonsLeds_Inv[ myBuff[i+1] ];
       }
       i += 3;
@@ -1745,7 +1745,7 @@ static size_t Force_MapReadFromForce(void *midiBuffer, size_t maxSize,size_t siz
         } // Shiftmode
         else
         if ( map_ButtonsLeds[ myBuff[i+1] ] >= 0 ) {
-          //tklog_info("MAP %d->%d\n",myBuff[i+1],map_ButtonsLeds[ myBuff[i+1] ]);
+          //tklog_debug("MAP %d->%d\n",myBuff[i+1],map_ButtonsLeds[ myBuff[i+1] ]);
           myBuff[i+1] = map_ButtonsLeds[ myBuff[i+1] ];
         }
 
@@ -2009,7 +2009,7 @@ static void Force_MapAppWriteToForce(const void *midiBuffer, size_t size) {
     if (  myBuff[i] == 0xB0  ) {
 
       if ( map_ButtonsLeds_Inv[ myBuff[i+1] ] >= 0 ) {
-        //tklog_info("MAP INV %d->%d\n",myBuff[i+1],map_ButtonsLeds_Inv[ myBuff[i+1] ]);
+        //tklog_debug("MAP INV %d->%d\n",myBuff[i+1],map_ButtonsLeds_Inv[ myBuff[i+1] ]);
         myBuff[i+1] = map_ButtonsLeds_Inv[ myBuff[i+1] ];
       }
       i += 3;
@@ -2114,7 +2114,7 @@ ssize_t snd_rawmidi_write(snd_rawmidi_t * 	rawmidi,const void * 	buffer,size_t 	
 ///////////////////////////////////////////////////////////////////////////////
 int snd_seq_open (snd_seq_t **handle, const char *name, int streams, int mode) {
 
-  //tklog_info("snd_seq_open %s (%p) \n",name,handle);
+  //tklog_debug("snd_seq_open %s (%p) \n",name,handle);
 
   return orig_snd_seq_open(handle, name, streams, mode);
 
@@ -2125,7 +2125,7 @@ int snd_seq_open (snd_seq_t **handle, const char *name, int streams, int mode) {
 ///////////////////////////////////////////////////////////////////////////////
 int snd_seq_close (snd_seq_t *handle) {
 
-  //tklog_info("snd_seq_close. Hanlde %p \n",handle);
+  //tklog_debug("snd_seq_close. Hanlde %p \n",handle);
 
   return orig_snd_seq_close(handle);
 
@@ -2136,7 +2136,7 @@ int snd_seq_close (snd_seq_t *handle) {
 ///////////////////////////////////////////////////////////////////////////////
 void snd_seq_port_info_set_name	(	snd_seq_port_info_t * 	info, const char * 	name )
 {
-  //tklog_info("snd_seq_port_info_set_name %s (%p) \n",name);
+  //tklog_debug("snd_seq_port_info_set_name %s (%p) \n",name);
 
 
   return snd_seq_port_info_set_name	(	info, name );
@@ -2147,7 +2147,7 @@ void snd_seq_port_info_set_name	(	snd_seq_port_info_t * 	info, const char * 	nam
 ///////////////////////////////////////////////////////////////////////////////
 int snd_seq_create_simple_port	(	snd_seq_t * 	seq, const char * 	name, unsigned int 	caps, unsigned int 	type )
 {
-//tklog_info("Port creation of  %s\n",name);
+  tklog_info("Port creation of  %s\n",name);
 
   // Rename virtual port correctly. Impossible with the native Alsa...
   if ( strncmp (" Virtual RawMIDI",name,16) && snd_seq_virtual_port_rename_flag  )
