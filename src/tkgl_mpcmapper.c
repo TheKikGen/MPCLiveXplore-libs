@@ -163,14 +163,19 @@ static int pws_capacity_file_handler = -1 ;
 // MPC alsa informations
 static int  mpc_midi_card = -1;
 static int  mpc_seq_client = -1;
+static int  mpc_seq_client_private = -1;
+static int  mpc_seq_client_public = -1;
+
 static char mpc_midi_private_alsa_name[20];
 static char mpc_midi_public_alsa_name[20];
 
 // Midi our controller seq client
-static int seqanyctrl_client=-1;
+static int anyctrl_midi_card = -1;
+static int anyctrl_seq_client=-1;
+static int anyctrl_seq_client_port=-1;
+
 static snd_rawmidi_t *rawmidi_inanyctrl  = NULL;
 static snd_rawmidi_t *rawmidi_outanyctrl = NULL;
-static int  anyctrl_midi_card = -1;
 static char * anyctrl_name = NULL;
 
 // Virtual rawmidi pointers to fake the MPC app
@@ -515,12 +520,32 @@ void SetPadColorFromColorInt(const uint8_t mpcId, const uint8_t padNumber, const
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-// Get an ALSA sequencer client containing a name
+// Get an ALSA card from a matching regular expression pattern
 ///////////////////////////////////////////////////////////////////////////////
-int GetSeqClientFromPortName(const char * name) {
+int GetCardFromShortName(const char *pattern) {
+   int card = -1;
+   char* shortname = NULL;
+
+   if ( snd_card_next(&card) < 0) return -1;
+   while (card >= 0) {
+   	  if ( snd_card_get_name(card, &shortname) == 0  ) {
+       if (match(shortname,pattern) ) return card;
+     }
+   	 if ( snd_card_next(&card) < 0) break;
+   }
+
+   return -1;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// Get an ALSA sequencer client , port and alsa card  from a regexp pattern
+///////////////////////////////////////////////////////////////////////////////
+// Will return 0 if found,
+int GetSeqClientFromPortName(const char * name, int *card, int *clientId, int *portId) {
 
 	if ( name == NULL) return -1;
 	char port_name[128];
+  int c= -1;
 
 	snd_seq_t *seq;
 	if (snd_seq_open(&seq, "default", SND_SEQ_OPEN_DUPLEX, 0) < 0) {
@@ -538,12 +563,16 @@ int GetSeqClientFromPortName(const char * name) {
 		/* reset query info */
 		snd_seq_port_info_set_client(pinfo, snd_seq_client_info_get_client(cinfo));
 		snd_seq_port_info_set_port(pinfo, -1);
-		while (snd_seq_query_next_port(seq, pinfo) >= 0) {
+    while (snd_seq_query_next_port(seq, pinfo) >= 0) {
 			sprintf(port_name,"%s %s",snd_seq_client_info_get_name(cinfo),snd_seq_port_info_get_name(pinfo));
-			if (strstr(port_name,name) != NULL) {
-        int r = snd_seq_client_info_get_client(cinfo);
-				snd_seq_close(seq);
-				return r ;
+      if (match(port_name,name) ) {
+        c = GetCardFromShortName(snd_seq_client_info_get_name(cinfo));
+        if ( c < 0 ) return -1;
+        *card = c;
+        *clientId = snd_seq_port_info_get_client(pinfo);
+        *portId = snd_seq_port_info_get_port(pinfo);
+        //tklog_debug("(hw:%d) Client %d:%d - %s%s\n",c, snd_seq_port_info_get_client(pinfo),snd_seq_port_info_get_port(pinfo),port_name );
+        return 0;
 			}
 		}
 	}
@@ -583,21 +612,6 @@ int GetLastPortSeqClient() {
 
 	snd_seq_close(seq);
 	return  r;
-}
-
-///////////////////////////////////////////////////////////////////////////////
-// Get an ALSA card from a matching regular expression pattern
-///////////////////////////////////////////////////////////////////////////////
-int GetCardFromShortName(const char *pattern) {
-   int card = -1;
-   char* shortname = NULL;
-
-   if ( snd_card_next(&card) < 0) return -1;
-   while (card >= 0) {
-   	  if ( snd_card_get_name(card, &shortname) == 0 && match(shortname,pattern) ) return card;
-   	  if ( snd_card_next(&card) < 0) break;
-   }
-   return -1;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -761,20 +775,11 @@ static void tkgl_init()
   // read mapping config file if any
   LoadMappingFromConfFile(configFileName);
 
-	// Initialize card id for public and private
-	mpc_midi_card = GetCardFromShortName(CTRL_MPC_ALL);
-	if ( mpc_midi_card < 0 ) {
-			tklog_fatal("Error : MPC controller card not found (regex pattern is '%s')\n",CTRL_MPC_ALL);
-			exit(1);
-	}
-
-	// Get MPC seq
-	// Public is port 0, Private is port 1
-	mpc_seq_client = GetSeqClientFromPortName("Private");
-	if ( mpc_seq_client  < 0 ) {
-		tklog_fatal("MPC controller seq client not found\n");
-		exit(1);
-	}
+  // Retrieve MPC midi card info
+  if ( GetSeqClientFromPortName(CTRL_MPC_ALL_PRIVATE,&mpc_midi_card,&mpc_seq_client,&mpc_seq_client_private) < 0 ) {
+    tklog_fatal("Error : MPC controller card/seq client not found (regex pattern is '%s')\n",CTRL_MPC_ALL_PRIVATE);
+    exit(1);
+  }
 
 	sprintf(mpc_midi_private_alsa_name,"hw:%d,0,1",mpc_midi_card);
 	sprintf(mpc_midi_public_alsa_name,"hw:%d,0,0",mpc_midi_card);
@@ -788,14 +793,12 @@ static void tkgl_init()
 	if ( anyctrl_name  != NULL) {
 
 		// Initialize card id for public and private
-		seqanyctrl_client = GetSeqClientFromPortName(anyctrl_name);
-    anyctrl_midi_card = GetCardFromShortName(anyctrl_name);
+    if ( GetSeqClientFromPortName(anyctrl_name,&anyctrl_midi_card,&anyctrl_seq_client,&anyctrl_seq_client_port) < 0 ) {
+      tklog_fatal("Error : %s card/seq client not found.\n",anyctrl_name);
+      exit(1);
+    }
 
-		if ( seqanyctrl_client  < 0 || anyctrl_midi_card < 0 ) {
-			tklog_fatal("%s seq client or card not found\n",anyctrl_name);
-			exit(1);
-		}
-		tklog_info("%s connect port is %d:0\n",anyctrl_name,seqanyctrl_client);
+		tklog_info("%s connect port is %d:%d\n",anyctrl_name,anyctrl_seq_client,anyctrl_seq_client_port);
     tklog_info("%s card id hw:%d found\n",anyctrl_name,anyctrl_midi_card);
 
 	}
@@ -833,15 +836,15 @@ static void tkgl_init()
 	aconnect(	seqvirt_client_outpub, 0, mpc_seq_client, 0);
 
 	// Connect our controller if used
-	if (seqanyctrl_client >= 0) {
+	if (anyctrl_seq_client >= 0) {
 		// port 0 to virtual In 0,
-		aconnect(	seqanyctrl_client, 0, seqvirt_client_inpriv, 0);
+		aconnect(	anyctrl_seq_client, 0, seqvirt_client_inpriv, 0);
 
 		// Virtual out priv 0 to our controller port 0
-		aconnect(	seqvirt_client_outpriv, 0, seqanyctrl_client, 0);
+		aconnect(	seqvirt_client_outpriv, 0, anyctrl_seq_client, 0);
 
 		// Virtual out public to our controller port 0
-		aconnect(	seqvirt_client_outpub, 0, seqanyctrl_client, 0);
+		aconnect(	seqvirt_client_outpub, 0, anyctrl_seq_client, 0);
 	}
 
   // Create a user virtual port if asked on the command line
@@ -2147,7 +2150,7 @@ void snd_seq_port_info_set_name	(	snd_seq_port_info_t * 	info, const char * 	nam
 ///////////////////////////////////////////////////////////////////////////////
 int snd_seq_create_simple_port	(	snd_seq_t * 	seq, const char * 	name, unsigned int 	caps, unsigned int 	type )
 {
-  tklog_info("Port creation of  %s\n",name);
+  tklog_info("Port creation : %s\n",name);
 
   // Rename virtual port correctly. Impossible with the native Alsa...
   if ( strncmp (" Virtual RawMIDI",name,16) && snd_seq_virtual_port_rename_flag  )
@@ -2169,7 +2172,7 @@ int snd_seq_create_simple_port	(	snd_seq_t * 	seq, const char * 	name, unsigned 
 
 	// We do not allow ports creation by MPC app for our device or our virtuals ports
   // Because this could lead to infinite midi loop in the MPC midi end user settings
-	if (  ( seqanyctrl_client >= 0 && strstr(name, anyctrl_name ) )
+	if (  ( anyctrl_seq_client >= 0 && strstr(name, anyctrl_name ) )
    //||   ( match(name,"^Client-[0-9][0-9][0-9] TKGL.*" ) )
 
    // In some specific cases, public and private ports could appear in the APP when spoofing,

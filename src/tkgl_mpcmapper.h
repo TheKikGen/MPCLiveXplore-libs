@@ -49,7 +49,7 @@ __ __| |           |  /_) |     ___|             |           |\n\
 #define CTRL_MPC_LIVE "MPC Live Controller"
 #define CTRL_MPC_LIVE_2 "MPC Live II"
 #define CTRL_MPC_MPC_ONE "MPC One MIDI"
-#define CTRL_MPC_ALL ".*(Akai.*Force$|MPC.*(Controller|One MIDI|Live II)$)"
+#define CTRL_MPC_ALL_PRIVATE "(MPC|Akai Pro Force).*Private$"
 
 // Product code file and diffrent file path to fake
 #define PRODUCT_CODE_PATH "/sys/firmware/devicetree/base/inmusic,product-code"
