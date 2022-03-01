@@ -58,42 +58,32 @@ your own midi mapping to input and output midi messages.
 
 // Log utilities ---------------------------------------------------------------
 
-enum { LOG_TRACE, LOG_DEBUG, LOG_INFO, LOG_WARN, LOG_ERROR, LOG_FATAL };
-
-#define tklog_trace(...) tklog(LOG_TRACE,  __VA_ARGS__)
-#define tklog_debug(...) tklog(LOG_DEBUG,  __VA_ARGS__)
-#define tklog_info(...)  tklog(LOG_INFO,   __VA_ARGS__)
-#define tklog_warn(...)  tklog(LOG_WARN,   __VA_ARGS__)
-#define tklog_error(...) tklog(LOG_ERROR,  __VA_ARGS__)
-#define tklog_fatal(...) tklog(LOG_FATAL,  __VA_ARGS__)
-
-static const char *tklog_level_strings[] = {
-  "TRACE", "DEBUG", "INFO", "WARN", "***ERROR", "***FATAL"
-};
-
-static void tklog(int level, const char *fmt, ...) {
-
-  va_list ap;
-
-  //time_t timestamp = time( NULL );
-  //struct tm * now = localtime( & timestamp );
-
-  //char buftime[16];
-  //buftime[strftime(buftime, sizeof(buftime), "%H:%M:%S", now)] = '\0';
-
-  fprintf(stdout, "[tkgl %-8s]  ",tklog_level_strings[level]);
-
-  va_start(ap, fmt);
-  vfprintf(stdout, fmt, ap);
-  va_end(ap);
-
-  fflush(stdout);
-
-}
+#include "tkgl_logutil.h"
 
 // Function prototypes ---------------------------------------------------------
 
 // Globals ---------------------------------------------------------------------
+
+// Ports and clients used by mpcmapper and router thread
+RoutingPorts_t TKPorts = {
+
+    // Mpc surface controller
+    .mpcCard = -1, .mpcClient = -1,  .mpcPrivatePort =-1, .mpcPublicPort =-1,
+
+    // Tkgl virtual ports exposing MPC rawmidi app ports
+    .virtClientRawMidiPrivateOut =-1, .virtPortRawMidiPrivateOut = -1,
+    .virtClientRawMidiPrivateIn = -1, .virtPortRawMidiPrivateIn = -1,
+    .virtClientRawMidiPublicOut = -1, .virtPortRawMidiPublicOut = -1,
+
+    // External midi controller
+    .ctrlCard =-1, .ctrlClient = -1 , .ctrlPort = -1,
+
+    // Router ports
+    .routerClient =-1, .routerPort = -1,
+    .midiEncoder = NULL,
+    .routerSeq = NULL,
+};
+
 
 // Raw midi dump flag (for debugging purpose)
 static uint8_t rawMidiDumpFlag = 0 ;     // Before transformation
@@ -108,19 +98,12 @@ static char *configFileName = NULL;
 static int map_ButtonsLeds[MAPPING_TABLE_SIZE];
 static int map_ButtonsLeds_Inv[MAPPING_TABLE_SIZE]; // Inverted table
 
-static int map_Ctrl[MAPPING_TABLE_SIZE];
-static int map_Ctrl_Inv[MAPPING_TABLE_SIZE]; // Inverted table
-
 // To navigate in matrix quadran when MPC spoofing a Force
-static int MPCPad_OffsetL = 0;
-static int MPCPad_OffsetC = 0;
-static int MPCPad_OffsetLLast = 0;
-
-// To change the bank group when using Force as a MPC
-static uint8_t MpcBankGroup = 0 ;
+static int MPC_PadOffsetL = 0;
+static int MPC_PadOffsetC = 0;
 
 // Force Matric pads color cache
-static ForceMPCPadColor_t PadSysexColorsCache[256];
+static Force_MPCPadColor_t Force_PadColorsCache[256];
 
 // End user virtual port name
 static char *user_virtual_portname = NULL;
@@ -134,18 +117,17 @@ static int MPC_PadBank = BANK_A ;
 
 // SHIFT Holded mode
 // Holding shift will activate the shift mode
-static bool shiftHoldedMode=false;
+static bool ShiftHoldedMode=false;
 
 // Columns modes in Force simulated on a MPC
-static int ForceColumnMode = -1 ;
-
+static int MPC_ForceColumnMode = -1 ;
 
 // Our MPC product id (index in the table)
-static int MPCOriginalId = -1;
+static int MPC_OriginalId = -1;
 // The one used
-static int MPCId = -1;
+static int MPC_Id = -1;
 // and the spoofed one,
-static int MPCSpoofedID = -1;
+static int MPC_SpoofedId = -1;
 
 // Internal product code file handler to change on the fly when the file will be opened
 // That avoids all binding stuff in shell
@@ -160,33 +142,17 @@ static int pws_present_file_handler = -1 ;
 static int pws_status_file_handler = -1 ;
 static int pws_capacity_file_handler = -1 ;
 
-// MPC alsa informations
-static int  mpc_midi_card = -1;
-static int  mpc_seq_client = -1;
-static int  mpc_seq_client_private = -1;
-static int  mpc_seq_client_public = -1;
-
+// MPC alsa names
 static char mpc_midi_private_alsa_name[20];
 static char mpc_midi_public_alsa_name[20];
 
-// Midi our controller seq client
-static int anyctrl_midi_card = -1;
-static int anyctrl_seq_client=-1;
-static int anyctrl_seq_client_port=-1;
-
-static snd_rawmidi_t *rawmidi_inanyctrl  = NULL;
-static snd_rawmidi_t *rawmidi_outanyctrl = NULL;
-static char * anyctrl_name = NULL;
+// Our midi controller port name
+static char anyctrl_name[128] ;
 
 // Virtual rawmidi pointers to fake the MPC app
 static snd_rawmidi_t *rawvirt_inpriv  = NULL;
 static snd_rawmidi_t *rawvirt_outpriv = NULL ;
 static snd_rawmidi_t *rawvirt_outpub  = NULL ;
-
-// Sequencers virtual client addresses
-static int seqvirt_client_inpriv  = -1;
-static int seqvirt_client_outpriv = -1;
-static int seqvirt_client_outpub  = -1;
 
 // Alsa API hooks declaration
 static typeof(&snd_rawmidi_open) orig_snd_rawmidi_open;
@@ -342,8 +308,8 @@ static int GetKeyValueFromConfFile(const char * confFileName, const char *sectio
 static void LoadMappingFromConfFile(const char * confFileName) {
 
   // shortcuts
-  char *ProductStrShort     = DeviceInfoBloc[MPCOriginalId].productStringShort;
-  char *currProductStrShort = DeviceInfoBloc[MPCId].productStringShort;
+  char *ProductStrShort     = DeviceInfoBloc[MPC_OriginalId].productStringShort;
+  char *currProductStrShort = DeviceInfoBloc[MPC_Id].productStringShort;
 
   // Section name strings
   char btLedMapSectionName[64];
@@ -367,10 +333,6 @@ static void LoadMappingFromConfFile(const char * confFileName) {
 
     map_ButtonsLeds[i] = -1;
     map_ButtonsLeds_Inv[i] = -1;
-
-    map_Ctrl[i] = -1;
-    map_Ctrl_Inv[i] = -1;
-
   }
 
   if ( confFileName == NULL ) return ;  // No config file ...return
@@ -477,7 +439,7 @@ void PrepareFakeMidiMsg(uint8_t buf[]) {
 // Set pad colors
 ///////////////////////////////////////////////////////////////////////////////
 // 2 implementations : call with a 32 bits color int value or with r,g,b values
-void SetPadColor(const uint8_t mpcId, const uint8_t padNumber, const uint8_t r,const uint8_t g,const uint8_t b ) {
+void SetPadColor(const uint8_t MPC_Id, const uint8_t padNumber, const uint8_t r,const uint8_t g,const uint8_t b ) {
 
   uint8_t sysexBuff[128];
   int p = 0;
@@ -488,7 +450,7 @@ void SetPadColor(const uint8_t mpcId, const uint8_t padNumber, const uint8_t r,c
   p += sizeof(AkaiSysex) ;
 
   // Add the current product id
-  sysexBuff[p++] = mpcId ;
+  sysexBuff[p++] = MPC_Id ;
 
   // Add the pad color fn and pad number and color
   memcpy(&sysexBuff[p], MPCSysexPadColorFn,sizeof(MPCSysexPadColorFn));
@@ -507,7 +469,7 @@ void SetPadColor(const uint8_t mpcId, const uint8_t padNumber, const uint8_t r,c
 
 }
 
-void SetPadColorFromColorInt(const uint8_t mpcId, const uint8_t padNumber, const uint32_t rgbColorValue) {
+void SetPadColorFromColorInt(const uint8_t MPC_Id, const uint8_t padNumber, const uint32_t rgbColorValue) {
 
   // Colors R G B max value is 7f in SYSEX. So the bit 8 is always set to 0.
 
@@ -515,7 +477,7 @@ void SetPadColorFromColorInt(const uint8_t mpcId, const uint8_t padNumber, const
   uint8_t g = ( rgbColorValue >> 8  ) & 0x7F ;
   uint8_t b = rgbColorValue & 0x7F;
 
-  SetPadColor(mpcId, padNumber, r, g , b );
+  SetPadColor(MPC_Id, padNumber, r, g , b );
 
 }
 
@@ -540,16 +502,17 @@ int GetCardFromShortName(const char *pattern) {
 ///////////////////////////////////////////////////////////////////////////////
 // Get an ALSA sequencer client , port and alsa card  from a regexp pattern
 ///////////////////////////////////////////////////////////////////////////////
-// Will return 0 if found,
-int GetSeqClientFromPortName(const char * name, int *card, int *clientId, int *portId) {
+// Will return 0 if found,.  if tureName or card are NULL, they are ignored.
+int GetSeqClientFromPortName(const char * pattern, char trueName[], int *card, int *clientId, int *portId) {
 
-	if ( name == NULL) return -1;
+	if ( pattern == NULL) return -1;
 	char port_name[128];
   int c= -1;
+  int r= -1;
 
 	snd_seq_t *seq;
 	if (snd_seq_open(&seq, "default", SND_SEQ_OPEN_DUPLEX, 0) < 0) {
-		fprintf(stderr,"*** Error : impossible to open default seq\n");
+		tklog_error("Impossible to open default seq (GetSeqClientFromPortName).\n");
 		return -1;
 	}
 
@@ -565,20 +528,24 @@ int GetSeqClientFromPortName(const char * name, int *card, int *clientId, int *p
 		snd_seq_port_info_set_port(pinfo, -1);
     while (snd_seq_query_next_port(seq, pinfo) >= 0) {
 			sprintf(port_name,"%s %s",snd_seq_client_info_get_name(cinfo),snd_seq_port_info_get_name(pinfo));
-      if (match(port_name,name) ) {
-        c = GetCardFromShortName(snd_seq_client_info_get_name(cinfo));
-        if ( c < 0 ) return -1;
-        *card = c;
+      if (match(port_name,pattern) ) {
+        if ( card != NULL ) {
+          c = GetCardFromShortName(snd_seq_client_info_get_name(cinfo));
+          if ( c < 0 ) break;
+          *card = c;
+        }
         *clientId = snd_seq_port_info_get_client(pinfo);
         *portId = snd_seq_port_info_get_port(pinfo);
-        //tklog_debug("(hw:%d) Client %d:%d - %s%s\n",c, snd_seq_port_info_get_client(pinfo),snd_seq_port_info_get_port(pinfo),port_name );
-        return 0;
+        if ( trueName != NULL ) strcpy(trueName,snd_seq_port_info_get_name(pinfo));
+        printf("(hw:%d) Client %d:%d - %s%s\n",c, snd_seq_port_info_get_client(pinfo),snd_seq_port_info_get_port(pinfo),port_name );
+        r = 0;
+        break;
 			}
 		}
 	}
 
 	snd_seq_close(seq);
-	return  -1;
+	return  -r;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -689,14 +656,14 @@ int aconnect(int src_client, int src_port, int dest_client, int dest_port) {
 // Get MPC hardware name from sysex id
 ///////////////////////////////////////////////////////////////////////////////
 
-static int GetIndexOfMPCId(uint8_t id){
+static int GetIndexOfMPC_Id(uint8_t id){
 	for (int i = 0 ; i < _END_MPCID ; i++ )
 		if ( DeviceInfoBloc[i].sysexId == id ) return i;
 	return -1;
 }
 
-const char * GetHwNameFromMPCId(uint8_t id){
-	int i = GetIndexOfMPCId(id);
+const char * GetHwNameFromMPC_Id(uint8_t id){
+	int i = GetIndexOfMPC_Id(id);
 	if ( i >= 0) return DeviceInfoBloc[i].productString ;
 	else return NULL;
 }
@@ -754,97 +721,144 @@ static void tkgl_init()
   // Find the id in the product code table
   for (int i = 0 ; i < _END_MPCID; i++) {
     if ( strncmp(DeviceInfoBloc[i].productCode,product_code,4) == 0 ) {
-      MPCOriginalId = i;
+      MPC_OriginalId = i;
       break;
     }
   }
-  if ( MPCOriginalId < 0) {
-    tklog_fatal("Error when reading the product-code file\n");
+  if ( MPC_OriginalId < 0) {
+    tklog_fatal("Error while reading the product-code file\n");
     exit(1);
   }
-  tklog_info("Original Product code : %s (%s)\n",DeviceInfoBloc[MPCOriginalId].productCode,DeviceInfoBloc[MPCOriginalId].productString);
+  tklog_info("Original Product code : %s (%s)\n",DeviceInfoBloc[MPC_OriginalId].productCode,DeviceInfoBloc[MPC_OriginalId].productString);
 
-  if ( MPCSpoofedID >= 0 ) {
-    tklog_info("Product code spoofed to %s (%s)\n",DeviceInfoBloc[MPCSpoofedID].productCode,DeviceInfoBloc[MPCSpoofedID].productString);
-    MPCId = MPCSpoofedID ;
-  } else MPCId = MPCOriginalId ;
+  if ( MPC_SpoofedId >= 0 ) {
+    tklog_info("Product code spoofed to %s (%s)\n",DeviceInfoBloc[MPC_SpoofedId].productCode,DeviceInfoBloc[MPC_SpoofedId].productString);
+    MPC_Id = MPC_SpoofedId ;
+  } else MPC_Id = MPC_OriginalId ;
 
   // Fake the power supply ?
-  if ( DeviceInfoBloc[MPCOriginalId].fakePowerSupply ) tklog_info("The power supply will be faked to allow battery mode.\n");
+  if ( DeviceInfoBloc[MPC_OriginalId].fakePowerSupply ) tklog_info("The power supply will be faked to allow battery mode.\n");
 
   // read mapping config file if any
   LoadMappingFromConfFile(configFileName);
 
   // Retrieve MPC midi card info
-  if ( GetSeqClientFromPortName(CTRL_MPC_ALL_PRIVATE,&mpc_midi_card,&mpc_seq_client,&mpc_seq_client_private) < 0 ) {
+  if ( GetSeqClientFromPortName(CTRL_MPC_ALL_PRIVATE,NULL,&TKPorts.mpcCard,&TKPorts.mpcClient,&TKPorts.mpcPrivatePort) < 0 ) {
     tklog_fatal("Error : MPC controller card/seq client not found (regex pattern is '%s')\n",CTRL_MPC_ALL_PRIVATE);
     exit(1);
   }
+  TKPorts.mpcPublicPort = 0 ;
+	sprintf(mpc_midi_private_alsa_name,"hw:%d,0,%d",TKPorts.mpcCard,TKPorts.mpcPrivatePort);
+	sprintf(mpc_midi_public_alsa_name,"hw:%d,0,%d",TKPorts.mpcCard,TKPorts.mpcPublicPort);
 
-	sprintf(mpc_midi_private_alsa_name,"hw:%d,0,1",mpc_midi_card);
-	sprintf(mpc_midi_public_alsa_name,"hw:%d,0,0",mpc_midi_card);
-	tklog_info("MPC controller card id hw:%d found\n",mpc_midi_card);
-	tklog_info("MPC controller Private port is %s\n",mpc_midi_private_alsa_name);
-	tklog_info("MPC controller Public port is %s\n",mpc_midi_public_alsa_name);
-	tklog_info("MPC controller seq client is %d\n",mpc_seq_client);
+	tklog_info("MPC controller card id hw:%d found\n",TKPorts.mpcCard);
+	tklog_info("MPC controller Private port Alsa name is %s\n",mpc_midi_private_alsa_name);
+	tklog_info("MPC controller Public port Alsa name is %s\n",mpc_midi_public_alsa_name);
+	tklog_info("MPC controller seq client is %d\n",TKPorts.mpcClient);
 
 	// Get our controller seq  port client
-	//const char * port_name = getenv("ANYCTRL_NAME") ;
 	if ( anyctrl_name  != NULL) {
 
 		// Initialize card id for public and private
-    if ( GetSeqClientFromPortName(anyctrl_name,&anyctrl_midi_card,&anyctrl_seq_client,&anyctrl_seq_client_port) < 0 ) {
-      tklog_fatal("Error : %s card/seq client not found.\n",anyctrl_name);
-      exit(1);
+    if ( GetSeqClientFromPortName(anyctrl_name,anyctrl_name,&TKPorts.ctrlCard,&TKPorts.ctrlClient,&TKPorts.ctrlPort) < 0 ) {
+      tklog_error("Error : %s controller card/seq client not found. Parameter ignored.\n",anyctrl_name);
+      anyctrl_name[0] = 0;
     }
-
-		tklog_info("%s connect port is %d:%d\n",anyctrl_name,anyctrl_seq_client,anyctrl_seq_client_port);
-    tklog_info("%s card id hw:%d found\n",anyctrl_name,anyctrl_midi_card);
+    else {
+      tklog_info("%s card is hw:%d. Id connect port is %d:%d\n",anyctrl_name,TKPorts.ctrlCard,TKPorts.ctrlClient,TKPorts.ctrlPort);
+    }
 
 	}
 
-	// Create 3 virtuals ports : Private I/O, Public O
-	// This will trig our hacked snd_seq_create_simple_port during the call.
-  // NB : the snd_rawmidi_open is hacked here to return the client id of the virtual port.
+	// Create 3 virtuals rawmidi ports : Private I/O, Public O that will expose rawmidi internal ports
+  // NB : the snd_rawmidi_open and snd_seq_create_simple_port are hacked here to return the client id of the virtual port.
   // So, return is either < 0 if error, or > 0, being the client number if everything is ok.
-  // The port is always 0. This is the standard behaviour.
+  // The port is always 0. This is the standard behaviour of Alsa virtual rawmidi.
 
-  seqvirt_client_inpriv  = snd_rawmidi_open(&rawvirt_inpriv, NULL,  "[virtual]TKGL Virtual In Private", 2);
-  seqvirt_client_outpriv = snd_rawmidi_open(NULL, &rawvirt_outpriv, "[virtual]TKGL Virtual Out Private", 3);
-  seqvirt_client_outpub  = snd_rawmidi_open(NULL, &rawvirt_outpub,  "[virtual]TKGL Virtual Out Public", 3);
+  TKPorts.virtClientRawMidiPrivateIn  = snd_rawmidi_open(&rawvirt_inpriv, NULL,  "[virtual]Virt MPC Rawmidi In Private", 2);
+  TKPorts.virtClientRawMidiPrivateOut = snd_rawmidi_open(NULL, &rawvirt_outpriv, "[virtual]Virt MPC Rawmidi Out Private", 3);
+  TKPorts.virtClientRawMidiPublicOut  = snd_rawmidi_open(NULL, &rawvirt_outpub,  "[virtual]Virt MPC Rawmidi Out Public", 3);
 
-	if ( seqvirt_client_inpriv < 0 || seqvirt_client_outpriv < 0 || seqvirt_client_outpub < 0 ) {
-		tklog_fatal("Impossible to create one or many virtual ports\n");
+	if ( TKPorts.virtClientRawMidiPrivateIn < 0 || TKPorts.virtClientRawMidiPrivateOut < 0 || TKPorts.virtClientRawMidiPublicOut < 0 ) {
+		tklog_fatal("Impossible to create one or many virtual rawmidi ports\n");
 		exit(1);
 	}
 
-  tklog_info("Virtual private input port %d  created.\n",seqvirt_client_inpriv);
-	tklog_info("Virtual private output port %d created.\n",seqvirt_client_outpriv);
-	tklog_info("Virtual public output port %d created.\n",seqvirt_client_outpub);
+  tklog_info("Virtual Mpc rawmidi private input port %d  created.\n",TKPorts.virtClientRawMidiPrivateIn);
+	tklog_info("Virtual Mpc rawmidi private output port %d created.\n",TKPorts.virtClientRawMidiPrivateOut);
+	tklog_info("Virtual Mpc rawmidi public output port %d created.\n",TKPorts.virtClientRawMidiPublicOut);
+
+  TKPorts.virtPortRawMidiPrivateIn = TKPorts.virtPortRawMidiPrivateOut = TKPorts.virtPortRawMidiPublicOut = 0;
+
+  // Create Router Private and public port for external access with alsa sequencer
+  // This will allow to process all midi flow with Alsa sequencer within the Router thread
+  // and avoid dirty patching within snd_rawmidi_read/write
+  char portname[64];
+
+  if (snd_seq_open(&TKPorts.routerSeq, "default", SND_SEQ_OPEN_DUPLEX, 0) < 0) {
+    tklog_fatal("Error opening router ALSA sequencer (tkgl_init).\n");
+    exit(1);
+  }
+
+  // Change the name of the seq with our for a better view in aconnect...
+  snd_seq_set_client_name(TKPorts.routerSeq, ROUTER_SEQ_NAME);
+
+  // Create the IN/OUT router ports
+  sprintf(portname, "%s Private", ROUTER_SEQ_NAME);
+  if ( ( (TKPorts.routerPort) = snd_seq_create_simple_port(TKPorts.routerSeq, portname,
+        SND_SEQ_PORT_CAP_WRITE | SND_SEQ_PORT_CAP_SUBS_WRITE |
+        SND_SEQ_PORT_CAP_READ | SND_SEQ_PORT_CAP_SUBS_READ |
+        SND_SEQ_PORT_CAP_DUPLEX,
+        SND_SEQ_PORT_TYPE_HARDWARE | SND_SEQ_PORT_TYPE_MIDI_GENERIC
+      ) )  < 0) {
+    tklog_fatal("Error creating sequencer port %s.\n",portname);
+    exit(1);
+  }
+  TKPorts.routerClient = snd_seq_client_id(TKPorts.routerSeq) ;
+  tklog_info("Router %s port created as %d:%d.\n",portname,TKPorts.routerClient,TKPorts.routerPort);
+
+
+  // Start the MIDI parser
+  if (snd_midi_event_new(MIDI_DECODER_SIZE, &TKPorts.midiEncoder ) < 0) {
+    tklog_fatal("Alsa error while initializing midi encoder (size: %d). Abort.\n",MIDI_DECODER_SIZE);
+    exit(1);
+  }
+  snd_midi_event_init(TKPorts.midiEncoder);
+  snd_midi_event_no_status(TKPorts.midiEncoder,1); // No running status
+
 
   // Make connections of our virtuals ports
   // MPC APP <---> VIRTUAL PORTS <---> MPC CONTROLLER PRIVATE & PUBLIC PORTS
 
-	// Private MPC controller port 1 out to virtual In priv 0
-	aconnect(	mpc_seq_client, 1, seqvirt_client_inpriv, 0);
+	// Private MPC controller port private  out to rawmidi virtual In priv
+	if ( aconnect(	TKPorts.mpcClient,TKPorts.mpcPrivatePort , TKPorts.virtClientRawMidiPrivateIn, TKPorts.virtPortRawMidiPrivateIn) < 0 ) {
+    tklog_fatal("Alsa error while connecting MPC private port to virtual rawmidi private in.\n");
+    exit(1);
+  }
 
-	// Virtual out priv 0 to Private MPC controller port 1 in
-	aconnect(	seqvirt_client_outpriv, 0, mpc_seq_client, 1);
+	// Virtual rawmidi out priv to Private MPC controller private port
+	if ( aconnect(	TKPorts.virtClientRawMidiPrivateOut,TKPorts.virtPortRawMidiPrivateOut, TKPorts.mpcClient,TKPorts.mpcPrivatePort) < 0 ) {
+    tklog_fatal("Alsa error while connecting virtual rawmidi private out to MPC Client private port.\n");
+    exit(1);
+  }
 
-	// Virtual out pub to Public MPC controller port 1 in
+	// Virtual rawmidi out pub to Public MPC controller
   // No need to cable the out...
-	aconnect(	seqvirt_client_outpub, 0, mpc_seq_client, 0);
+  if ( aconnect(	TKPorts.virtClientRawMidiPublicOut,TKPorts.virtPortRawMidiPublicOut, TKPorts.mpcClient,TKPorts.mpcPublicPort) < 0 ) {
+    tklog_fatal("Alsa error while connecting virtual rawmidi public out to MPC Client public port.\n");
+    exit(1);
+  }
 
 	// Connect our controller if used
-	if (anyctrl_seq_client >= 0) {
+	if (TKPorts.ctrlClient >= 0) {
 		// port 0 to virtual In 0,
-		aconnect(	anyctrl_seq_client, 0, seqvirt_client_inpriv, 0);
-
-		// Virtual out priv 0 to our controller port 0
-		aconnect(	seqvirt_client_outpriv, 0, anyctrl_seq_client, 0);
-
-		// Virtual out public to our controller port 0
-		aconnect(	seqvirt_client_outpub, 0, anyctrl_seq_client, 0);
+		// aconnect(	TKPorts.ctrlClient, TKPorts.ctrlPort, seqvirt_client_inpriv, 0);
+    //
+		// // Virtual out priv 0 to our controller port 0
+		// aconnect(	seqvirt_client_outpriv, 0, TKPorts.ctrlClient, 0);
+    //
+		// // Virtual out public to our controller port 0
+		// aconnect(	seqvirt_client_outpub, 0, TKPorts.ctrlClient, 0);
 	}
 
   // Create a user virtual port if asked on the command line
@@ -945,33 +959,33 @@ int __libc_start_main(
       }
       else
       if ( ( strncmp("--tkgl_ctrlname=",argv[i],16) == 0 ) && ( strlen(argv[i]) >16 ) ) {
-         anyctrl_name = argv[i] + 16;
+         strcpy(anyctrl_name,argv[i] + 16);
          tklog_info("--tgkl_ctrlname specified for %s midi controller\n",anyctrl_name) ;
       }
       else
       // Spoofed product id
       if ( ( strcmp("--tkgl_iamX",argv[i]) == 0 ) ) {
-        MPCSpoofedID = MPC_X;
+        MPC_SpoofedId = MPC_X;
         tkgl_SpoofArg = argv[i];
       }
       else
       if ( ( strcmp("--tkgl_iamLive",argv[i]) == 0 ) ) {
-        MPCSpoofedID = MPC_LIVE;
+        MPC_SpoofedId = MPC_LIVE;
         tkgl_SpoofArg = argv[i];
       }
       else
       if ( ( strcmp("--tkgl_iamForce",argv[i]) == 0 ) ) {
-        MPCSpoofedID = MPC_FORCE;
+        MPC_SpoofedId = MPC_FORCE;
         tkgl_SpoofArg = argv[i];
       }
       else
       if ( ( strcmp("--tkgl_iamOne",argv[i]) == 0 ) ) {
-        MPCSpoofedID = MPC_ONE;
+        MPC_SpoofedId = MPC_ONE;
         tkgl_SpoofArg = argv[i];
       }
       else
       if ( ( strcmp("--tkgl_iamLive2",argv[i]) == 0 ) ) {
-        MPCSpoofedID = MPC_LIVE_MK2;
+        MPC_SpoofedId = MPC_LIVE_MK2;
         tkgl_SpoofArg = argv[i];
       }
       else
@@ -1001,8 +1015,8 @@ int __libc_start_main(
 
     }
 
-    if ( MPCSpoofedID >= 0 ) {
-      tklog_info("%s specified. %s spoofing.\n",tkgl_SpoofArg,DeviceInfoBloc[MPCSpoofedID].productString ) ;
+    if ( MPC_SpoofedId >= 0 ) {
+      tklog_info("%s specified. %s spoofing.\n",tkgl_SpoofArg,DeviceInfoBloc[MPC_SpoofedId].productString ) ;
     }
 
     // Initialize everything
@@ -1110,9 +1124,9 @@ static void Mpc_ResfreshPadsColorFromForceCache(uint8_t padL, uint8_t padC, uint
 
       int padF = ( l + padL ) * 8 + c + padC;
       sysexBuff[7] = padF;
-      sysexBuff[8] = PadSysexColorsCache[padF].r ;
-      sysexBuff[9] = PadSysexColorsCache[padF].g;
-      sysexBuff[10] = PadSysexColorsCache[padF].b;
+      sysexBuff[8] = Force_PadColorsCache[padF].r ;
+      sysexBuff[9] = Force_PadColorsCache[padF].g;
+      sysexBuff[10] = Force_PadColorsCache[padF].b;
       // Send the sysex to the MPC controller
       snd_rawmidi_write(rawvirt_outpriv,sysexBuff,sizeof(sysexBuff));
 
@@ -1129,7 +1143,7 @@ static void Mpc_ShowForceMatrixQuadran(uint8_t forcePadL, uint8_t forcePadC) {
 
   uint8_t sysexBuff[12] = { 0xF0, 0x47, 0x7F, 0x40, 0x65, 0x00, 0x04, 0x00, 0x00, 0x00, 0x00, 0xF7};
   //                                                                 [Pad #] [R]   [G]   [B]
-  sysexBuff[3] = DeviceInfoBloc[MPCOriginalId].sysexId;
+  sysexBuff[3] = DeviceInfoBloc[MPC_OriginalId].sysexId;
 
   uint8_t q = ( forcePadL == 4 ? 0 : 1 ) * 4 + ( forcePadC == 4 ? 3 : 2 ) ;
 
@@ -1160,16 +1174,16 @@ void Mpc_DrawPadLineFromForceCache(uint8_t forcePadL, uint8_t forcePadC, uint8_t
 
   uint8_t sysexBuff[12] = { 0xF0, 0x47, 0x7F, 0x40, 0x65, 0x00, 0x04, 0x00, 0x00, 0x00, 0x00, 0xF7};
   //                                                                 [Pad #] [R]   [G]   [B]
-  sysexBuff[3] = DeviceInfoBloc[MPCOriginalId].sysexId;
+  sysexBuff[3] = DeviceInfoBloc[MPC_OriginalId].sysexId;
 
   uint8_t p = forcePadL*8 + forcePadC ;
 
   for ( int c = 0 ; c < 4 ; c++ ) {
     sysexBuff[7] = mpcPadL * 4 + c ;
     p = forcePadL*8 + c + forcePadC  ;
-    sysexBuff[8]  = PadSysexColorsCache[p].r ;
-    sysexBuff[9]  = PadSysexColorsCache[p].g;
-    sysexBuff[10] = PadSysexColorsCache[p].b;
+    sysexBuff[8]  = Force_PadColorsCache[p].r ;
+    sysexBuff[9]  = Force_PadColorsCache[p].g;
+    sysexBuff[10] = Force_PadColorsCache[p].b;
 
     //tklog_debug("[tkgl] MPC Pad Line refresh : %d r g b %02X %02X %02X\n",sysexBuff[7],sysexBuff[8],sysexBuff[9],sysexBuff[10]);
 
@@ -1191,8 +1205,8 @@ static size_t Mpc_MapReadFromForce(void *midiBuffer, size_t maxSize,size_t size)
       // IDENTITY REQUEST
       if (  myBuff[i] == 0xF0 &&  memcmp(&myBuff[i],IdentityReplySysexHeader,sizeof(IdentityReplySysexHeader)) == 0 ) {
         // If so, substitue sysex identity request by the faked one
-        memcpy(&myBuff[i+sizeof(IdentityReplySysexHeader)],DeviceInfoBloc[MPCId].sysexIdReply, sizeof(DeviceInfoBloc[MPCId].sysexIdReply) );
-        i += sizeof(IdentityReplySysexHeader) + sizeof(DeviceInfoBloc[MPCId].sysexIdReply) ;
+        memcpy(&myBuff[i+sizeof(IdentityReplySysexHeader)],DeviceInfoBloc[MPC_Id].sysexIdReply, sizeof(DeviceInfoBloc[MPC_Id].sysexIdReply) );
+        i += sizeof(IdentityReplySysexHeader) + sizeof(DeviceInfoBloc[MPC_Id].sysexIdReply) ;
         continue;
       }
 
@@ -1200,9 +1214,9 @@ static size_t Mpc_MapReadFromForce(void *midiBuffer, size_t maxSize,size_t size)
       // If it's a shift + knob turn, add an offset
       //  B0 [10-31] [7F - n]
       if (  myBuff[i] == 0xB0 ) {
-        if ( shiftHoldedMode && DeviceInfoBloc[MPCOriginalId].qlinkKnobsCount < 16
+        if ( ShiftHoldedMode && DeviceInfoBloc[MPC_OriginalId].qlinkKnobsCount < 16
                   && myBuff[i+1] >= 0x10 && myBuff[i+1] <= 0x31 )
-            myBuff[i+1] +=  DeviceInfoBloc[MPCOriginalId].qlinkKnobsCount;
+            myBuff[i+1] +=  DeviceInfoBloc[MPC_OriginalId].qlinkKnobsCount;
         i += 3;
         continue;
       }
@@ -1214,7 +1228,7 @@ static size_t Mpc_MapReadFromForce(void *midiBuffer, size_t maxSize,size_t size)
         // SHIFT pressed/released (nb the SHIFT button can't be mapped)
         // Double click on SHIFT is not managed at all. Avoid it.
         if ( myBuff[i+1] == SHIFT_KEY_VALUE ) {
-            shiftHoldedMode = ( myBuff[i+2] == 0x7F ? true : false );
+            ShiftHoldedMode = ( myBuff[i+2] == 0x7F ? true : false );
             // Kill the shift  event because we want to manage this here and not let
             // the MPC app to know that shift is pressed
             //PrepareFakeMidiMsg(&myBuff[i]);
@@ -1222,7 +1236,7 @@ static size_t Mpc_MapReadFromForce(void *midiBuffer, size_t maxSize,size_t size)
             continue ; // next msg
         }
 
-        //tklog_debug("Shift + key mode is %s \n",shiftHoldedMode ? "active":"inactive");
+        //tklog_debug("Shift + key mode is %s \n",ShiftHoldedMode ? "active":"inactive");
 
         // Exception : Qlink management is hard coded
         // SHIFT "KNOB TOUCH" button :  add the offset when possible
@@ -1230,8 +1244,8 @@ static size_t Mpc_MapReadFromForce(void *midiBuffer, size_t maxSize,size_t size)
         if ( myBuff[i+1] >= 0x54 && myBuff[i+1] <= 0x63 ) {
             myBuff[i+1] -- ; // Map to force Qlink touch
 
-            if (  shiftHoldedMode && DeviceInfoBloc[MPCOriginalId].qlinkKnobsCount < 16 )
-                myBuff[i+1] += DeviceInfoBloc[MPCOriginalId].qlinkKnobsCount;
+            if (  ShiftHoldedMode && DeviceInfoBloc[MPC_OriginalId].qlinkKnobsCount < 16 )
+                myBuff[i+1] += DeviceInfoBloc[MPC_OriginalId].qlinkKnobsCount;
 
             //tklog_debug("Qlink 0x%02x touch\n",myBuff[i+1] );
 
@@ -1242,7 +1256,7 @@ static size_t Mpc_MapReadFromForce(void *midiBuffer, size_t maxSize,size_t size)
         // Simple key press
         //tklog_debug("Mapping for %d = %d - shift = %d \n", myBuff[i+1], map_ButtonsLeds[ myBuff[i+1] ],map_ButtonsLeds[ myBuff[i+1] +  0x80 ] );
 
-        int mapValue = map_ButtonsLeds[ myBuff[i+1] + ( shiftHoldedMode ? 0x80 : 0)  ];
+        int mapValue = map_ButtonsLeds[ myBuff[i+1] + ( ShiftHoldedMode ? 0x80 : 0)  ];
 
         // No mapping. Next msg
         if ( mapValue < 0 ) {
@@ -1260,7 +1274,7 @@ static size_t Mpc_MapReadFromForce(void *midiBuffer, size_t maxSize,size_t size)
         // Not a shift mapping.  Disable the current shift mode
         if (  mapValue < 0x80  )  {
           if ( myBuff[i + 2] ==  0x7f ) { // Key press
-              if ( shiftHoldedMode) {
+              if ( ShiftHoldedMode) {
                 if ( size > maxSize - 3 ) fprintf(stdout,"Warning : midi buffer overflow when inserting SHIFT key release !!\n");
                 memcpy( &myBuff[i + 3 ], &myBuff[i], size - i );
                 size +=3;
@@ -1271,7 +1285,7 @@ static size_t Mpc_MapReadFromForce(void *midiBuffer, size_t maxSize,size_t size)
         }
         else { // Shift at destination
           if ( myBuff[i + 2] ==  0x7f ) { // Key press
-            if ( ! shiftHoldedMode) {
+            if ( ! ShiftHoldedMode) {
               if ( size > maxSize - 3 ) fprintf(stdout,"Warning : midi buffer overflow when inserting SHIFT key press !!\n");
               memcpy( &myBuff[i + 3 ], &myBuff[i], size - i );
               size +=3;
@@ -1292,13 +1306,13 @@ static size_t Mpc_MapReadFromForce(void *midiBuffer, size_t maxSize,size_t size)
           case FORCE_REC_ARM:
           case FORCE_CLIP_STOP:
             if ( myBuff[i+2] == 0x7F ) { // Key press
-                ForceColumnMode = mapValue ;
-                Mpc_DrawPadLineFromForceCache(8, MPCPad_OffsetC, 3);
-                Mpc_ShowForceMatrixQuadran(MPCPad_OffsetL, MPCPad_OffsetC);
+                MPC_ForceColumnMode = mapValue ;
+                Mpc_DrawPadLineFromForceCache(8, MPC_PadOffsetC, 3);
+                Mpc_ShowForceMatrixQuadran(MPC_PadOffsetL, MPC_PadOffsetC);
             }
             else {
-              ForceColumnMode = -1;
-              Mpc_ResfreshPadsColorFromForceCache(MPCPad_OffsetL,MPCPad_OffsetC,4);
+              MPC_ForceColumnMode = -1;
+              Mpc_ResfreshPadsColorFromForceCache(MPC_PadOffsetL,MPC_PadOffsetC,4);
             }
             break;
         }
@@ -1318,9 +1332,9 @@ static size_t Mpc_MapReadFromForce(void *midiBuffer, size_t maxSize,size_t size)
         uint8_t padC = padM % 4  ;
 
         // Compute the Force pad id without offset
-        uint8_t padF = ( 3 - padL + MPCPad_OffsetL ) * 8 + padC + MPCPad_OffsetC ;
+        uint8_t padF = ( 3 - padL + MPC_PadOffsetL ) * 8 + padC + MPC_PadOffsetC ;
 
-        if (  shiftHoldedMode || ForceColumnMode >= 0  ) {
+        if (  ShiftHoldedMode || MPC_ForceColumnMode >= 0  ) {
           // Ignore aftertouch in special pad modes
           if ( myBuff[i] == 0xA9 ) {
               PrepareFakeMidiMsg(&myBuff[i]);
@@ -1329,18 +1343,18 @@ static size_t Mpc_MapReadFromForce(void *midiBuffer, size_t maxSize,size_t size)
           }
 
           uint8_t buttonValue = 0x7F;
-          uint8_t offsetC = MPCPad_OffsetC;
-          uint8_t offsetL = MPCPad_OffsetL;
+          uint8_t offsetC = MPC_PadOffsetC;
+          uint8_t offsetL = MPC_PadOffsetL;
 
           // Columns solo mute mode on first pad line
-          if ( ForceColumnMode >= 0 &&  padL == 3  ) padM = 0x7F ; // Simply to pass in the switch case
+          if ( MPC_ForceColumnMode >= 0 &&  padL == 3  ) padM = 0x7F ; // Simply to pass in the switch case
           // LAUNCH ROW SHIFT + PAD  in column 0 = Launch the corresponding line
-          else if ( shiftHoldedMode && padC == 0 ) padM = 0x7E ; // Simply to pass in the switch case
+          else if ( ShiftHoldedMode && padC == 0 ) padM = 0x7E ; // Simply to pass in the switch case
 
           switch (padM) {
             // COlumn pad mute,solo   Pads botom line  90 29-30 00/7f
             case 0x7F:
-              buttonValue = 0x29 + padC + MPCPad_OffsetC;
+              buttonValue = 0x29 + padC + MPC_PadOffsetC;
               break;
             // Launch row.
             case 0x7E:
@@ -1348,29 +1362,29 @@ static size_t Mpc_MapReadFromForce(void *midiBuffer, size_t maxSize,size_t size)
               break;
             // Matrix Navigation left Right  Up Down need shift
             case 9:
-              if ( shiftHoldedMode) buttonValue = FORCE_LEFT;
+              if ( ShiftHoldedMode) buttonValue = FORCE_LEFT;
               break;
             case 11:
-              if ( shiftHoldedMode) buttonValue = FORCE_RIGHT;
+              if ( ShiftHoldedMode) buttonValue = FORCE_RIGHT;
               break;
             case 14:
-              if ( shiftHoldedMode) buttonValue = FORCE_UP;
+              if ( ShiftHoldedMode) buttonValue = FORCE_UP;
               break;
             case 10:
-              if ( shiftHoldedMode) buttonValue = FORCE_DOWN;
+              if ( ShiftHoldedMode) buttonValue = FORCE_DOWN;
               break;
             // PAd as quadran
             case 6:
-              if ( ForceColumnMode >= 0 ) { offsetL = offsetC = 0; }
+              if ( MPC_ForceColumnMode >= 0 ) { offsetL = offsetC = 0; }
               break;
             case 7:
-              if ( ForceColumnMode >= 0 ) { offsetL = 0; offsetC = 4; }
+              if ( MPC_ForceColumnMode >= 0 ) { offsetL = 0; offsetC = 4; }
               break;
             case 2:
-              if ( ForceColumnMode >= 0 ) { offsetL = 4; offsetC = 0; }
+              if ( MPC_ForceColumnMode >= 0 ) { offsetL = 4; offsetC = 0; }
               break;
             case 3:
-              if ( ForceColumnMode >= 0 ) { offsetL = 4; offsetC = 4; }
+              if ( MPC_ForceColumnMode >= 0 ) { offsetL = 4; offsetC = 4; }
               break;
             default:
               PrepareFakeMidiMsg(&myBuff[i]);
@@ -1390,12 +1404,12 @@ static size_t Mpc_MapReadFromForce(void *midiBuffer, size_t maxSize,size_t size)
           }
 
           // Column button + pad as quadran
-          if ( ( MPCPad_OffsetL != offsetL )  || ( MPCPad_OffsetC != offsetC ) )  {
-            MPCPad_OffsetL = offsetL ;
-            MPCPad_OffsetC = offsetC ;
+          if ( ( MPC_PadOffsetL != offsetL )  || ( MPC_PadOffsetC != offsetC ) )  {
+            MPC_PadOffsetL = offsetL ;
+            MPC_PadOffsetC = offsetC ;
             //tklog_debug("Quadran nav = %d \n", buttonValue) ;
-            Mpc_ResfreshPadsColorFromForceCache(MPCPad_OffsetL,MPCPad_OffsetC,4);
-            Mpc_ShowForceMatrixQuadran(MPCPad_OffsetL, MPCPad_OffsetC);
+            Mpc_ResfreshPadsColorFromForceCache(MPC_PadOffsetL,MPC_PadOffsetC,4);
+            Mpc_ShowForceMatrixQuadran(MPC_PadOffsetL, MPC_PadOffsetC);
             PrepareFakeMidiMsg(&myBuff[i]);
             i += 3;
             continue; // next msg
@@ -1434,16 +1448,16 @@ static size_t Mpc_MapReadFromMpc(void *midiBuffer, size_t maxSize,size_t size) {
       // IDENTITY REQUEST
       if (  myBuff[i] == 0xF0 &&  memcmp(&myBuff[i],IdentityReplySysexHeader,sizeof(IdentityReplySysexHeader)) == 0 ) {
         // If so, substitue sysex identity request by the faked one
-        memcpy(&myBuff[i+sizeof(IdentityReplySysexHeader)],DeviceInfoBloc[MPCId].sysexIdReply, sizeof(DeviceInfoBloc[MPCId].sysexIdReply) );
-        i += sizeof(IdentityReplySysexHeader) + sizeof(DeviceInfoBloc[MPCId].sysexIdReply) ;
+        memcpy(&myBuff[i+sizeof(IdentityReplySysexHeader)],DeviceInfoBloc[MPC_Id].sysexIdReply, sizeof(DeviceInfoBloc[MPC_Id].sysexIdReply) );
+        i += sizeof(IdentityReplySysexHeader) + sizeof(DeviceInfoBloc[MPC_Id].sysexIdReply) ;
       }
 
       // KNOBS TURN ------------------------------------------------------------
       else
       if (  myBuff[i] == 0xB0 ) {
-        if ( shiftHoldedMode && DeviceInfoBloc[MPCOriginalId].qlinkKnobsCount < 16
+        if ( ShiftHoldedMode && DeviceInfoBloc[MPC_OriginalId].qlinkKnobsCount < 16
                   && myBuff[i+1] >= 0x10 && myBuff[i+1] <= 0x31 )
-            myBuff[i+1] +=  DeviceInfoBloc[MPCOriginalId].qlinkKnobsCount;
+            myBuff[i+1] +=  DeviceInfoBloc[MPC_OriginalId].qlinkKnobsCount;
         i += 3;
       }
 
@@ -1453,18 +1467,18 @@ static size_t Mpc_MapReadFromMpc(void *midiBuffer, size_t maxSize,size_t size) {
         // Shift is an exception and  mapping is ignored (the SHIFT button can't be mapped)
         // Double click on SHIFT is not managed at all. Avoid it.
         if ( myBuff[i+1] == SHIFT_KEY_VALUE ) {
-            shiftHoldedMode = ( myBuff[i+2] == 0x7F ? true:false ) ;
+            ShiftHoldedMode = ( myBuff[i+2] == 0x7F ? true:false ) ;
         }
         else
         // SHIFT button is current holded
         // SHIFT double click on the MPC side is not taken into account for the moment
-        if ( shiftHoldedMode ) {
+        if ( ShiftHoldedMode ) {
 
           // KNOB TOUCH : If it's a shift + knob "touch", add the offset
           // 90 [54-63] 7F
-          if ( DeviceInfoBloc[MPCOriginalId].qlinkKnobsCount < 16
+          if ( DeviceInfoBloc[MPC_OriginalId].qlinkKnobsCount < 16
                   && myBuff[i+1] >= 0x54 && myBuff[i+1] <= 0x63 )
-                 myBuff[i+1] += DeviceInfoBloc[MPCOriginalId].qlinkKnobsCount;
+                 myBuff[i+1] += DeviceInfoBloc[MPC_OriginalId].qlinkKnobsCount;
 
           // Look for shift mapping above 0x7F
           if ( map_ButtonsLeds[ myBuff[i+1] + 0x80  ] >= 0 ) {
@@ -1542,7 +1556,7 @@ static void Mpc_MapAppWriteToMpc(const void *midiBuffer, size_t size) {
     if (  myBuff[i] == 0xF0 &&  memcmp(&myBuff[i],AkaiSysex,sizeof(AkaiSysex)) == 0 ) {
         // Update the sysex id in the sysex for our original hardware
         i += sizeof(AkaiSysex) ;
-        myBuff[i] = DeviceInfoBloc[MPCOriginalId].sysexId; // MPC are several...
+        myBuff[i] = DeviceInfoBloc[MPC_OriginalId].sysexId; // MPC are several...
         i++;
 
           // SET PAD COLORS SYSEX FN
@@ -1552,9 +1566,9 @@ static void Mpc_MapAppWriteToMpc(const void *midiBuffer, size_t size) {
 
               uint8_t padF = myBuff[i];
               // Update Force pad color cache
-              PadSysexColorsCache[padF].r = myBuff[i + 1 ];
-              PadSysexColorsCache[padF].g = myBuff[i + 2 ];
-              PadSysexColorsCache[padF].b = myBuff[i + 3 ];
+              Force_PadColorsCache[padF].r = myBuff[i + 1 ];
+              Force_PadColorsCache[padF].g = myBuff[i + 2 ];
+              Force_PadColorsCache[padF].b = myBuff[i + 3 ];
 
               i += 5 ; // Next msg
         }
@@ -1593,7 +1607,7 @@ static void Mpc_MapAppWriteToForce(const void *midiBuffer, size_t size) {
     if (  myBuff[i] == 0xF0 &&  memcmp(&myBuff[i],AkaiSysex,sizeof(AkaiSysex)) == 0 ) {
         // Update the sysex id in the sysex for our original hardware
         i += sizeof(AkaiSysex) ;
-        myBuff[i] = DeviceInfoBloc[MPCOriginalId].sysexId;
+        myBuff[i] = DeviceInfoBloc[MPC_OriginalId].sysexId;
         i++;
 
         // SET PAD COLORS SYSEX ------------------------------------------------
@@ -1607,24 +1621,24 @@ static void Mpc_MapAppWriteToForce(const void *midiBuffer, size_t size) {
             uint8_t padM = 0x7F ;
 
             // Update Force pad color cache
-            PadSysexColorsCache[padF].r = myBuff[i + 1 ];
-            PadSysexColorsCache[padF].g = myBuff[i + 2 ];
-            PadSysexColorsCache[padF].b = myBuff[i + 3 ];
+            Force_PadColorsCache[padF].r = myBuff[i + 1 ];
+            Force_PadColorsCache[padF].g = myBuff[i + 2 ];
+            Force_PadColorsCache[padF].b = myBuff[i + 3 ];
 
             //tklog_debug("Setcolor for Force pad %d (%d,%d)  %02x%02x%02x\n",padF,padL,padC,myBuff[i + 1 ],myBuff[i + 2 ],myBuff[i + 3 ]);
 
             // Transpose Force pad to Mpc pad in the 4x4 current quadran
-            if ( padL >= MPCPad_OffsetL && padL < MPCPad_OffsetL + 4 ) {
-              if ( padC >= MPCPad_OffsetC  && padC < MPCPad_OffsetC + 4 ) {
-                padM = (  3 - ( padL - MPCPad_OffsetL  ) ) * 4 + ( padC - MPCPad_OffsetC)  ;
+            if ( padL >= MPC_PadOffsetL && padL < MPC_PadOffsetL + 4 ) {
+              if ( padC >= MPC_PadOffsetC  && padC < MPC_PadOffsetC + 4 ) {
+                padM = (  3 - ( padL - MPC_PadOffsetL  ) ) * 4 + ( padC - MPC_PadOffsetC)  ;
               }
             }
 
             // Take care of the pad mutes mode line 0 on the MPC, line 8 on Force
             // Shift must not be pressed else it shows the sub option of lines 8/9
             // and not the state of solo/mut/rec arm etc...
-            if ( padL == 8 && !shiftHoldedMode && ForceColumnMode >= 0   ) refreshMutePadLine = true;
-            else if ( ( padL == 8 || padL == 9 ) && shiftHoldedMode && ForceColumnMode < 0   ) refreshOptionPadLines = true;
+            if ( padL == 8 && !ShiftHoldedMode && MPC_ForceColumnMode >= 0   ) refreshMutePadLine = true;
+            else if ( ( padL == 8 || padL == 9 ) && ShiftHoldedMode && MPC_ForceColumnMode < 0   ) refreshOptionPadLines = true;
 
             //tklog_debug("Mpc pad transposed : %d \n",padM);
 
@@ -1652,7 +1666,7 @@ static void Mpc_MapAppWriteToForce(const void *midiBuffer, size_t size) {
   }
 
   // Check if mute pad line changed
-  if ( refreshMutePadLine ) Mpc_DrawPadLineFromForceCache(8, MPCPad_OffsetC, 3);
+  if ( refreshMutePadLine ) Mpc_DrawPadLineFromForceCache(8, MPC_PadOffsetC, 3);
   else if ( refreshOptionPadLines ) {
 
     // Mpc_DrawPadLineFromForceCache(9, 0, 3);
@@ -1678,7 +1692,7 @@ static size_t Force_MapReadFromForce(void *midiBuffer, size_t maxSize,size_t siz
       // IDENTITY REQUEST REPLY
       if (  myBuff[i] == 0xF0 &&  memcmp(&myBuff[i],IdentityReplySysexHeader,sizeof(IdentityReplySysexHeader)) == 0 ) {
         // If so, substitue sysex identity request by the faked one
-        i += sizeof(IdentityReplySysexHeader) + sizeof(DeviceInfoBloc[MPCId].sysexIdReply) ;
+        i += sizeof(IdentityReplySysexHeader) + sizeof(DeviceInfoBloc[MPC_Id].sysexIdReply) ;
       }
 
       // KNOBS TURN ------------------------------------------------------------
@@ -1698,18 +1712,18 @@ static size_t Force_MapReadFromForce(void *midiBuffer, size_t maxSize,size_t siz
         // Shift is an exception and  mapping is ignored (the SHIFT button can't be mapped)
         // Double click on SHIFT is not managed at all. Avoid it.
         if ( myBuff[i+1] == SHIFT_KEY_VALUE ) {
-            shiftHoldedMode = ( myBuff[i+2] == 0x7F ? true:false ) ;
+            ShiftHoldedMode = ( myBuff[i+2] == 0x7F ? true:false ) ;
         }
         else
         // SHIFT button is current holded
         // SHIFT double click on the MPC side is not taken into account for the moment
-        if ( shiftHoldedMode ) {
+        if ( ShiftHoldedMode ) {
 
           // KNOB TOUCH : If it's a shift + knob "touch", add the offset
           // 90 [54-63] 7F
-          if ( DeviceInfoBloc[MPCOriginalId].qlinkKnobsCount < 16
+          if ( DeviceInfoBloc[MPC_OriginalId].qlinkKnobsCount < 16
                   && myBuff[i+1] >= 0x54 && myBuff[i+1] <= 0x63 )
-                 myBuff[i+1] += DeviceInfoBloc[MPCOriginalId].qlinkKnobsCount;
+                 myBuff[i+1] += DeviceInfoBloc[MPC_OriginalId].qlinkKnobsCount;
 
           // Look for shift mapping above 0x7F
           if ( map_ButtonsLeds[ myBuff[i+1] + 0x80  ] >= 0 ) {
@@ -1787,8 +1801,8 @@ static size_t Force_MapReadFromMpc(void *midiBuffer, size_t maxSize,size_t size)
 
       if (  myBuff[i] == 0xF0 &&  memcmp(&myBuff[i],IdentityReplySysexHeader,sizeof(IdentityReplySysexHeader)) == 0 ) {
         // If so, substitue sysex identity request by the faked one
-        memcpy(&myBuff[i+sizeof(IdentityReplySysexHeader)],DeviceInfoBloc[MPCId].sysexIdReply, sizeof(DeviceInfoBloc[MPCId].sysexIdReply) );
-        i += sizeof(IdentityReplySysexHeader) + sizeof(DeviceInfoBloc[MPCId].sysexIdReply) ;
+        memcpy(&myBuff[i+sizeof(IdentityReplySysexHeader)],DeviceInfoBloc[MPC_Id].sysexIdReply, sizeof(DeviceInfoBloc[MPC_Id].sysexIdReply) );
+        i += sizeof(IdentityReplySysexHeader) + sizeof(DeviceInfoBloc[MPC_Id].sysexIdReply) ;
       }
 
 // CC KNOBS TURN ---------------------------------------------------------------
@@ -1796,10 +1810,10 @@ static size_t Force_MapReadFromMpc(void *midiBuffer, size_t maxSize,size_t size)
       else
       if (  myBuff[i] == 0xB0 ) {
         // If it's a shift + knob turn, add an offset   B0 [10-31] [7F - n]
-        if ( shiftHoldedMode &&  DeviceInfoBloc[MPCOriginalId].qlinkKnobsCount < 16
+        if ( ShiftHoldedMode &&  DeviceInfoBloc[MPC_OriginalId].qlinkKnobsCount < 16
                   && myBuff[i+1] >= 0x10 && myBuff[i+1] <= 0x31 ) {
 
-          myBuff[i+1] +=  DeviceInfoBloc[MPCOriginalId].qlinkKnobsCount;
+          myBuff[i+1] +=  DeviceInfoBloc[MPC_OriginalId].qlinkKnobsCount;
 
         }
        // Todo mapping
@@ -1813,19 +1827,19 @@ static size_t Force_MapReadFromMpc(void *midiBuffer, size_t maxSize,size_t size)
         // Shift is an exception and  mapping is ignored (the SHIFT button can't be mapped)
         // Double click on SHIFT is not managed at all. Avoid it.
         if ( myBuff[i+1] == SHIFT_KEY_VALUE ) {
-            shiftHoldedMode = ( myBuff[i+2] == 0x7F ? true:false ) ;
+            ShiftHoldedMode = ( myBuff[i+2] == 0x7F ? true:false ) ;
         }
         else
         // SHIFT button is currently holded
         // SHIFT native double click on the MPC side is not taken into account for the moment
-        if ( shiftHoldedMode ) {
+        if ( ShiftHoldedMode ) {
 
           // KNOB TOUCH : If it's a shift + knob "touch", add the offset   90 [54-63] 7F
           // Before the mapping
-          if (  DeviceInfoBloc[MPCOriginalId].qlinkKnobsCount < 16
+          if (  DeviceInfoBloc[MPC_OriginalId].qlinkKnobsCount < 16
                   && myBuff[i+1] >= 0x54 && myBuff[i+1] <= 0x63 )
           {
-            myBuff[i+1] += DeviceInfoBloc[MPCOriginalId].qlinkKnobsCount;
+            myBuff[i+1] += DeviceInfoBloc[MPC_OriginalId].qlinkKnobsCount;
           }
 
           // Look for shift mapping above 0x7F
@@ -1930,7 +1944,7 @@ static void Force_MapAppWriteToMpc(const void *midiBuffer, size_t size) {
     if (  myBuff[i] == 0xF0 &&  memcmp(&myBuff[i],AkaiSysex,sizeof(AkaiSysex)) == 0 ) {
         // Update the sysex id in the sysex for our original hardware
         i += sizeof(AkaiSysex) ;
-        myBuff[i] = DeviceInfoBloc[MPCOriginalId].sysexId;
+        myBuff[i] = DeviceInfoBloc[MPC_OriginalId].sysexId;
         i++;
 
         // PAD SET COLOR SYSEX - MPC spoofed on a Force
@@ -1986,7 +2000,7 @@ static void Force_MapAppWriteToForce(const void *midiBuffer, size_t size) {
     if (  myBuff[i] == 0xF0 &&  memcmp(&myBuff[i],AkaiSysex,sizeof(AkaiSysex)) == 0 ) {
         // Update the sysex id in the sysex for our original hardware
         i += sizeof(AkaiSysex) ;
-        //myBuff[i] = DeviceInfoBloc[MPCOriginalId].sysexId;
+        //myBuff[i] = DeviceInfoBloc[MPC_OriginalId].sysexId;
         i++;
 
         // PAD COLOR SYSEX - Store color in the pad color cache
@@ -1997,9 +2011,9 @@ static void Force_MapAppWriteToForce(const void *midiBuffer, size_t size) {
 
               // Update Force pad color cache
               uint8_t padF = myBuff[i];
-              PadSysexColorsCache[padF].r = myBuff[i + 1 ];
-              PadSysexColorsCache[padF].g = myBuff[i + 2 ];
-              PadSysexColorsCache[padF].b = myBuff[i + 3 ];
+              Force_PadColorsCache[padF].r = myBuff[i + 1 ];
+              Force_PadColorsCache[padF].g = myBuff[i + 2 ];
+              Force_PadColorsCache[padF].b = myBuff[i + 3 ];
 
               i += 5 ; // Next msg
         }
@@ -2043,9 +2057,9 @@ ssize_t snd_rawmidi_read(snd_rawmidi_t *rawmidi, void *buffer, size_t size) {
   if ( rawmidi == rawvirt_inpriv  ) {
 
     // We are running on a Force
-    if ( MPCOriginalId == MPC_FORCE ) {
+    if ( MPC_OriginalId == MPC_FORCE ) {
       // We want to map things on Force it self
-      if ( MPCId == MPC_FORCE ) {
+      if ( MPC_Id == MPC_FORCE ) {
         r = Force_MapReadFromForce(buffer,size,r);
       }
       // Simulate a MPC on a Force
@@ -2056,7 +2070,7 @@ ssize_t snd_rawmidi_read(snd_rawmidi_t *rawmidi, void *buffer, size_t size) {
     // We are running on a MPC
     else {
       // We need to remap on a MPC it self
-      if ( MPCId != MPC_FORCE ) {
+      if ( MPC_Id != MPC_FORCE ) {
         r = Mpc_MapReadFromMpc(buffer,size,r);
       }
       // Simulate a Force on a MPC
@@ -2082,9 +2096,9 @@ ssize_t snd_rawmidi_write(snd_rawmidi_t * 	rawmidi,const void * 	buffer,size_t 	
   if ( rawmidi == rawvirt_outpriv || rawmidi == rawvirt_outpub  ) {
 
     // We are running on a Force
-    if ( MPCOriginalId == MPC_FORCE ) {
+    if ( MPC_OriginalId == MPC_FORCE ) {
       // We want to map things on Force it self
-      if ( MPCId == MPC_FORCE ) {
+      if ( MPC_Id == MPC_FORCE ) {
         Force_MapAppWriteToForce(buffer,size);
       }
       // Simulate a MPC on a Force
@@ -2095,7 +2109,7 @@ ssize_t snd_rawmidi_write(snd_rawmidi_t * 	rawmidi,const void * 	buffer,size_t 	
     // We are running on a MPC
     else {
       // We need to remap on a MPC it self
-      if ( MPCId != MPC_FORCE ) {
+      if ( MPC_Id != MPC_FORCE ) {
         Mpc_MapAppWriteToMpc(buffer,size);
       }
       // Simulate a Force on a MPC
@@ -2152,6 +2166,11 @@ int snd_seq_create_simple_port	(	snd_seq_t * 	seq, const char * 	name, unsigned 
 {
   tklog_info("Port creation : %s\n",name);
 
+  snd_seq_client_info_t *cinfo;
+  snd_seq_client_info_alloca(&cinfo);
+  snd_seq_get_client_info (seq, cinfo);
+
+
   // Rename virtual port correctly. Impossible with the native Alsa...
   if ( strncmp (" Virtual RawMIDI",name,16) && snd_seq_virtual_port_rename_flag  )
   {
@@ -2169,27 +2188,27 @@ int snd_seq_create_simple_port	(	snd_seq_t * 	seq, const char * 	name, unsigned 
     return r;
   }
 
-
-	// We do not allow ports creation by MPC app for our device or our virtuals ports
+	// We do not allow MPC ports creation by MPC app for our device or our virtuals ports
   // Because this could lead to infinite midi loop in the MPC midi end user settings
-	if (  ( anyctrl_seq_client >= 0 && strstr(name, anyctrl_name ) )
-   //||   ( match(name,"^Client-[0-9][0-9][0-9] TKGL.*" ) )
+	if (  strncmp("MPC",snd_seq_client_info_get_name(cinfo),3) == 0 ) {
 
-   // In some specific cases, public and private ports could appear in the APP when spoofing,
-   // because port names haven't the same prefixes (eg. Force vs MPC). The consequence is
-   // that the MPC App receives midi message of buttons and encoders in midi tracks.
-   // So we mask here Private and Public ports eventually requested by MPC App, which
-   // should be only internal rawmidi ports.
+      if ( ( TKPorts.ctrlClient >= 0 && strstr(name, anyctrl_name) )
 
-   // This match will also catch our TKGL virtual ports having Private or Public suffix.
-   ||  ( ( match(name,".* Public$|.* Private$" )) )
+     // In some specific cases, public and private ports could appear in the APP when spoofing,
+     // because port names haven't the same prefixes (eg. Force vs MPC). The consequence is
+     // that the MPC App receives midi message of buttons and encoders in midi tracks.
+     // So we mask here Private and Public ports eventually requested by MPC App, which
+     // should be only internal rawmidi ports.
 
- )
- {
-    tklog_info("Port %s creation canceled.\n",name);
-    return -1;
+     // This match will also catch our TKGL virtual ports having Private or Public suffix.
+     ||  ( ( match(name,".* Public$|.* Private$" )) )
+
+     )
+     {
+        tklog_info("MPC app Port %s creation canceled.\n",name);
+        return -1;
+     }
  }
-
  return orig_snd_seq_create_simple_port(seq,name,caps,type);
 }
 
@@ -2256,21 +2275,21 @@ int open64(const char *pathname, int flags,...) {
    // product code
    if ( product_code_file_handler < 0 && strcmp(pathname,PRODUCT_CODE_PATH) == 0 ) {
      // Create a fake file in memory
-     product_code_file_handler = fake_open(pathname,DeviceInfoBloc[MPCId].productCode, strlen(DeviceInfoBloc[MPCId].productCode) ) ;
+     product_code_file_handler = fake_open(pathname,DeviceInfoBloc[MPC_Id].productCode, strlen(DeviceInfoBloc[MPC_Id].productCode) ) ;
      return product_code_file_handler ;
    }
 
    // product compatible
    if ( product_compatible_file_handler < 0 && strcmp(pathname,PRODUCT_COMPATIBLE_PATH) == 0 ) {
      char buf[64];
-     sprintf(buf,PRODUCT_COMPATIBLE_STR,DeviceInfoBloc[MPCId].productCompatible);
+     sprintf(buf,PRODUCT_COMPATIBLE_STR,DeviceInfoBloc[MPC_Id].productCompatible);
      product_compatible_file_handler = fake_open(pathname,buf, strlen(buf) ) ;
      return product_compatible_file_handler ;
    }
 
    // Fake power supply files if necessary only (this allows battery mode)
    else
-   if ( DeviceInfoBloc[MPCOriginalId].fakePowerSupply ) {
+   if ( DeviceInfoBloc[MPC_OriginalId].fakePowerSupply ) {
 
      if ( pws_voltage_file_handler   < 0 && strcmp(pathname,POWER_SUPPLY_VOLTAGE_NOW_PATH) == 0 ) {
         pws_voltage_file_handler = fake_open(pathname,POWER_SUPPLY_VOLTAGE_NOW,strlen(POWER_SUPPLY_VOLTAGE_NOW) ) ;
