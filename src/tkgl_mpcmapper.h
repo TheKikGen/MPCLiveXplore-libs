@@ -43,6 +43,10 @@ __ __| |           |  /_) |     ___|             |           |\n\
  _|  _| |_|\\___| _|\\_\\_|_|\\_\\\\____|\\___|_|  _| _____|\\__,_|_.__/ ____/\n\
 "
 
+// Router
+#define ROUTER_SEQ_NAME "TKGL MIDI router"
+#define MIDI_DECODER_SIZE 128
+
 // MPC Controller names (regexp) - Use aconnect -l
 #define CTRL_FORCE "Akai Pro Force"
 #define CTRL_MPC_X "MPC X Controller"
@@ -70,13 +74,36 @@ __ __| |           |  /_) |     ___|             |           |\n\
 #define POWER_SUPPLY_CAPACITY "100"
 
 // Colors R G B (nb . max r g b value is 7f. The bit 8 is always set )
-#define COLOR_WHITE   0x7F7F7F
-#define COLOR_BLACK   0x000000
-#define COLOR_RED     0x7F0000
-#define COLOR_BLUE    0x00007F
-#define COLOR_GREEN   0x007F00
-#define COLOR_YELLOW  0x007F7F
-#define COLOR_MAGENTA 0x7F007F
+// Offical Force colors
+#define COLOR_FIRE       0x7F1919
+#define COLOR_TANGERINE  0x7F3419
+#define COLOR_APRICOT    0x7F5019
+#define COLOR_CANARY     0x7F6E19
+#define COLOR_LEMON      0x757F19
+#define COLOR_CHARTREUSE 0x5A7F19
+#define COLOR_NEON       0x3B7F19
+#define COLOR_LIME       0x207F19
+#define COLOR_CLOVER     0x197F2E
+#define COLOR_SEA        0x197F4C
+#define COLOR_MINT       0x197F68
+#define COLOR_CYAN       0x197C7F
+#define COLOR_SKY        0x195D7F
+#define COLOR_AZURE      0x19427F
+#define COLOR_MIDNIGHT   0x19277F
+#define COLOR_INDIGO     0x3A197F
+#define COLOR_VIOLET     0x46197F
+#define COLOR_GRAPE      0x60197F
+#define COLOR_FUSHIA     0x7F197F
+#define COLOR_MAGENTA    0x7F1964
+#define COLOR_CORAL      0x7F1949
+
+#define COLOR_WHITE      0x7F7F7F
+#define COLOR_BLACK      0x000000
+#define COLOR_RED        0x7F0000
+#define COLOR_BLUE       0x00007F
+#define COLOR_GREEN      0x007F00
+#define COLOR_YELLOW     0x007F7F
+#define COLOR_MAGENTA2   0x7F007F
 
 // Mute pads mod button value
 #define FORCE_ASSIGN_A   123
@@ -114,13 +141,31 @@ __ __| |           |  /_) |     ___|             |           |\n\
 #define INI_FILE_KEY_MAX_LEN 64
 #define INI_FILE_LINE_MAX_LEN 256
 
+// ----------------------------------------------------------------------------
+// Launchpad MK3
+// ----------------------------------------------------------------------------
+
+const uint8_t SX_DEVICE_INQUIRY[] = { 0xF0, 0x7E, 0x7F, 0x06, 0x01, 0xF7 };
+const uint8_t SX_LPMK3_INQUIRY_REPLY_APP[] = { 0xF0, 0x7E, 0x00, 0x06, 0x02, 0x00, 0x20, 0x29, 0x13, 0x01, 0x00, 0x00 } ;
+//const uint8_t SX_LPMK3_PGM_MODE = { 0xF0, 0x00, 0x20, 0x29, 0x02, 0x0D, 0x00, 0x7F, 0xF7} ;
+const uint8_t SX_LPMK3_PGM_MODE[]  = { 0xF0, 0x00, 0x20, 0x29, 0x02, 0x0D, 0x0E, 0x01, 0xF7 } ;
+const uint8_t SX_LPMK3_DAW_MODE[]  = { 0xF0, 0x00, 0x20, 0x29, 0x02, 0x0D, 0x10, 0x01, 0xF7 } ;
+const uint8_t SX_LPMK3_STDL_MODE[] = { 0xF0, 0x00, 0x20, 0x29, 0x02, 0x0D, 0x10, 0x00, 0xF7 } ;
+const uint8_t SX_LPMK3_DAW_CLEAR[] = { 0xF0, 0x00, 0x20, 0x29, 0x02, 0x0D, 0x12, 0x01, 0x00, 0X01, 0xF7 } ;
+
+//F0h 00h 20h 29h 02h 0Dh 07h [<loop> <speed> 0x01 R G B [<text>] ] F7h
+const uint8_t SX_LPMK3_TEXT_SCROLL[] = { 0xF0, 0x00, 0x20, 0x29, 0x02, 0x0D, 0x07 };
+
+// 0xF0, 0x00, 0x20, 0x29, 0x02, 0x0D, 0x03, 0x03 (Led Index) ( r) (g)  (b)
+uint8_t SX_LPMK3_LED_RGB_COLOR[] = { 0xF0, 0x00, 0x20, 0x29, 0x02, 0x0D, 0x03, 0x03, 0x00, 0x00, 0x00, 0x00, 0xF7 };
+
 
 // Pads Color cache captured from sysex events
 typedef struct {
   uint8_t r;
   uint8_t g;
   uint8_t b;
-} ForceMPCPadColor_t;
+} Force_MPCPadColor_t;
 
 
 // Device info block typedef
@@ -134,6 +179,51 @@ typedef struct {
   uint8_t   qlinkKnobsCount;
   uint8_t   sysexIdReply[7];
 } DeviceInfo_t;
+
+// Routing ports
+typedef struct {
+  // Mpc surface controller
+  int mpcCard;
+  int mpcClient;
+  int mpcPrivPort;
+  int mpcPubPort;
+
+  // Tkgl virtual ports exposing MPC rawmidi app ports
+  // Port is always 0
+  int virtClientPrivOut;
+  int virtClientPrivIn;
+  int virtClientPubOut;
+
+  // External midi controller
+  int ctrlCard;
+  int ctrlClient;
+  int ctrlPort;
+
+  // Router ports. Mirror of physical ports
+  int routerClient;
+  int routerPrivPort;
+  int routerCtrlPort;
+  int routerPubPort;
+  int routerMpcPrivPort;
+  int routerMpcPubPort;
+
+  // Alsa sequencer and parser
+  snd_seq_t *routerSeq;
+
+} RoutingPorts_t;
+
+// Rbg color struct
+typedef union
+{
+  uint32_t v;
+  struct {
+    uint8_t b : 8;
+    uint8_t g : 8;
+    uint8_t r : 8;
+    uint8_t : 8;
+  } c;
+} RGBcolor_t;
+
 
 // Internal MPC product sysex id  ( a struct may be better....)
 enum MPCIds  {  MPC_X,   MPC_LIVE,   MPC_FORCE, MPC_ONE,   MPC_LIVE_MK2, _END_MPCID };
