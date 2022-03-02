@@ -183,34 +183,40 @@ typedef struct {
 // Routing ports
 typedef struct {
   // Mpc surface controller
-  int mpcCard;
-  int mpcClient;
-  int mpcPrivPort;
-  int mpcPubPort;
+  struct {
+    int card;
+    int cli;
+    int portPriv;
+    int portPub;
+  } Mpc ;
 
   // Tkgl virtual ports exposing MPC rawmidi app ports
   // Port is always 0
-  int virtClientPrivOut;
-  int virtClientPrivIn;
-  int virtClientPubOut;
+  struct  {
+    int cliPrivOut;
+    int cliPrivIn;
+    int cliPubOut;
+  } Virt;
 
   // External midi controller
-  int ctrlCard;
-  int ctrlClient;
-  int ctrlPort;
+  struct {
+    int card;
+    int cli;
+    int port;
+  } Ctrl;
 
-  // Router ports. Mirror of physical ports
-  int routerClient;
-  int routerPrivPort;
-  int routerCtrlPort;
-  int routerPubPort;
-  int routerMpcPrivPort;
-  int routerMpcPubPort;
+  // Router ports. Mirror of physical/app ports
+  int cli;
+  int portPriv;
+  int portCtrl;
+  int portPub;
+  int portMpcPriv;
+  int portMpcPub;
 
   // Alsa sequencer and parser
-  snd_seq_t *routerSeq;
+  snd_seq_t *seq;
 
-} RoutingPorts_t;
+} TkRouter_t;
 
 // Rbg color struct
 typedef union
