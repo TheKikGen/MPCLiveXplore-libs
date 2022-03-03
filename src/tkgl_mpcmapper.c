@@ -68,7 +68,8 @@ your own midi mapping to input and output midi messages.
 static void ShowBufferHexDump(const uint8_t* data, ssize_t sz, uint8_t nl);
 static ssize_t AllMpcProcessRead( uint8_t *buffer, size_t maxSize, ssize_t size, bool isSysex );
 
-int AllMpc_MapPadFromDevice(uint8_t * buffer, ssize_t size) ;
+int AllMpc_MapPadFromDevice(uint8_t * buffer, ssize_t size, size_t maxSize) ;
+int AllMpc_MapButtonFromDevice( uint8_t * buffer, ssize_t size , size_t maxSize);
 
 // Globals ---------------------------------------------------------------------
 
@@ -1013,7 +1014,6 @@ int ControllerInitialize(TkRouter_t *rp) {
 
 }
 
-
 ///////////////////////////////////////////////////////////////////////////////
 // MIDI EVEN PROCESS AND ROUTE (IN A sub THREAD)
 ///////////////////////////////////////////////////////////////////////////////
@@ -1061,12 +1061,17 @@ void threadMidiProcessAndRoute(TkRouter_t *rp) {
           switch (ev->type) {
             case SND_SEQ_EVENT_NOTEON:
             case SND_SEQ_EVENT_NOTEOFF:
+            case SND_SEQ_EVENT_CHANPRESS:
+              // Buttons on channel 0
+              if ( ev->data.control.channel == 0 && ev->type == SND_SEQ_EVENT_NOTEON) {
+                AllMpc_MapButtonFromDevice( buffer,size,sizeof(buffer) );
+              }
+
               // Mpc Pads on channel 9
-              if ( ev->data.control.channel == 9 ) {
-                AllMpc_MapPadFromDevice( buffer,sizeof(buffer) );
+              else if ( ev->data.control.channel == 9 ) {
+                AllMpc_MapPadFromDevice( buffer, size, sizeof(buffer) );
               }
               break;
-
           }
 
 
@@ -1736,105 +1741,105 @@ static size_t Mpc_MapReadFromForce(void *midiBuffer, size_t maxSize,size_t size)
       }
 
       // BUTTONS PRESS / RELEASE------------------------------------------------
-      if (  myBuff[i] == 0x90   ) {
-        //tklog_debug("Button 0x%02x %s\n",myBuff[i+1], (myBuff[i+2] == 0x7F ? "pressed":"released") );
-
-        // SHIFT pressed/released (nb the SHIFT button can't be mapped)
-        // Double click on SHIFT is not managed at all. Avoid it.
-        if ( myBuff[i+1] == SHIFT_KEY_VALUE ) {
-            ShiftHoldedMode = ( myBuff[i+2] == 0x7F ? true : false );
-            // Kill the shift  event because we want to manage this here and not let
-            // the MPC app to know that shift is pressed
-            //PrepareFakeMidiMsg(&myBuff[i]);
-            i +=3 ;
-            continue ; // next msg
-        }
-
-        //tklog_debug("Shift + key mode is %s \n",ShiftHoldedMode ? "active":"inactive");
-
-        // Exception : Qlink management is hard coded
-        // SHIFT "KNOB TOUCH" button :  add the offset when possible
-        // MPC : 90 [54-63] 7F      FORCE : 90 [53-5A] 7F  (no "untouch" exists)
-        if ( myBuff[i+1] >= 0x54 && myBuff[i+1] <= 0x63 ) {
-            myBuff[i+1] -- ; // Map to force Qlink touch
-
-            if (  ShiftHoldedMode && DeviceInfoBloc[MPC_OriginalId].qlinkKnobsCount < 16 )
-                myBuff[i+1] += DeviceInfoBloc[MPC_OriginalId].qlinkKnobsCount;
-
-            //tklog_debug("Qlink 0x%02x touch\n",myBuff[i+1] );
-
-            i += 3 ;
-            continue ; // next msg
-        }
-
-        // Simple key press
-        //tklog_debug("Mapping for %d = %d - shift = %d \n", myBuff[i+1], map_ButtonsLeds[ myBuff[i+1] ],map_ButtonsLeds[ myBuff[i+1] +  0x80 ] );
-
-        int mapValue = map_ButtonsLeds[ myBuff[i+1] + ( ShiftHoldedMode ? 0x80 : 0)  ];
-
-        // No mapping. Next msg
-        if ( mapValue < 0 ) {
-          PrepareFakeMidiMsg(&myBuff[i]);
-          i += 3 ;
-          //tklog_debug("No mapping found for 0x%02x \n",myBuff[i+1]);
-
-          continue ; // next msg
-        }
-
-        //tklog_debug("Mapping found for 0x%02x : 0x%02x \n",myBuff[i+1],mapValue);
-
-
-        // Manage shift mapping at destination
-        // Not a shift mapping.  Disable the current shift mode
-        if (  mapValue < 0x80  )  {
-          if ( myBuff[i + 2] ==  0x7f ) { // Key press
-              if ( ShiftHoldedMode) {
-                if ( size > maxSize - 3 ) fprintf(stdout,"Warning : midi buffer overflow when inserting SHIFT key release !!\n");
-                memcpy( &myBuff[i + 3 ], &myBuff[i], size - i );
-                size +=3;
-                myBuff[i + 1] = SHIFT_KEY_VALUE ;   myBuff[i + 2] =  0x00 ; // Button SHIFT release insert
-                i += 3 ;
-              }
-          }
-        }
-        else { // Shift at destination
-          if ( myBuff[i + 2] ==  0x7f ) { // Key press
-            if ( ! ShiftHoldedMode) {
-              if ( size > maxSize - 3 ) fprintf(stdout,"Warning : midi buffer overflow when inserting SHIFT key press !!\n");
-              memcpy( &myBuff[i + 3 ], &myBuff[i], size - i );
-              size +=3;
-              myBuff[i + 1] = SHIFT_KEY_VALUE ;   myBuff[i + 2] =  0x07 ; // Button SHIFT press insert
-              i += 3 ;
-            }
-          }
-          mapValue -= 0x80 ;
-        }
-
-
-        // Key press Post mapping
-        // Activate the special column mode when Force spoofed on a MPC
-        // Colum mode Button pressed
-        switch ( mapValue ) {
-          case FORCE_MUTE:
-          case FORCE_SOLO:
-          case FORCE_REC_ARM:
-          case FORCE_CLIP_STOP:
-            if ( myBuff[i+2] == 0x7F ) { // Key press
-                MPC_ForceColumnMode = mapValue ;
-                Mpc_DrawPadLineFromForceCache(8, MPC_PadOffsetC, 3);
-                Mpc_ShowForceMatrixQuadran(MPC_PadOffsetL, MPC_PadOffsetC);
-            }
-            else {
-              MPC_ForceColumnMode = -1;
-              Mpc_ResfreshPadsColorFromForceCache(MPC_PadOffsetL,MPC_PadOffsetC,4);
-            }
-            break;
-        }
-        myBuff[i + 1] = mapValue ;
-
-        i += 3;
-        continue; // next msg
-      }
+    // if (  myBuff[i] == 0x90   ) {
+    //     //tklog_debug("Button 0x%02x %s\n",myBuff[i+1], (myBuff[i+2] == 0x7F ? "pressed":"released") );
+    //
+    //     // SHIFT pressed/released (nb the SHIFT button can't be mapped)
+    //     // Double click on SHIFT is not managed at all. Avoid it.
+    //     if ( myBuff[i+1] == SHIFT_KEY_VALUE ) {
+    //         ShiftHoldedMode = ( myBuff[i+2] == 0x7F ? true : false );
+    //         // Kill the shift  event because we want to manage this here and not let
+    //         // the MPC app to know that shift is pressed
+    //         //PrepareFakeMidiMsg(&myBuff[i]);
+    //         i +=3 ;
+    //         continue ; // next msg
+    //     }
+    //
+    //     //tklog_debug("Shift + key mode is %s \n",ShiftHoldedMode ? "active":"inactive");
+    //
+    //     // Exception : Qlink management is hard coded
+    //     // SHIFT "KNOB TOUCH" button :  add the offset when possible
+    //     // MPC : 90 [54-63] 7F      FORCE : 90 [53-5A] 7F  (no "untouch" exists)
+    //     if ( myBuff[i+1] >= 0x54 && myBuff[i+1] <= 0x63 ) {
+    //         myBuff[i+1] -- ; // Map to force Qlink touch
+    //
+    //         if (  ShiftHoldedMode && DeviceInfoBloc[MPC_OriginalId].qlinkKnobsCount < 16 )
+    //             myBuff[i+1] += DeviceInfoBloc[MPC_OriginalId].qlinkKnobsCount;
+    //
+    //         //tklog_debug("Qlink 0x%02x touch\n",myBuff[i+1] );
+    //
+    //         i += 3 ;
+    //         continue ; // next msg
+    //     }
+    //
+    //     // Simple key press
+    //     //tklog_debug("Mapping for %d = %d - shift = %d \n", myBuff[i+1], map_ButtonsLeds[ myBuff[i+1] ],map_ButtonsLeds[ myBuff[i+1] +  0x80 ] );
+    //
+    //     int mapValue = map_ButtonsLeds[ myBuff[i+1] + ( ShiftHoldedMode ? 0x80 : 0)  ];
+    //
+    //     // No mapping. Next msg
+    //     if ( mapValue < 0 ) {
+    //       PrepareFakeMidiMsg(&myBuff[i]);
+    //       i += 3 ;
+    //       //tklog_debug("No mapping found for 0x%02x \n",myBuff[i+1]);
+    //
+    //       continue ; // next msg
+    //     }
+    //
+    //     //tklog_debug("Mapping found for 0x%02x : 0x%02x \n",myBuff[i+1],mapValue);
+    //
+    //
+    //     // Manage shift mapping at destination
+    //     // Not a shift mapping.  Disable the current shift mode
+    //     if (  mapValue < 0x80  )  {
+    //       if ( myBuff[i + 2] ==  0x7f ) { // Key press
+    //           if ( ShiftHoldedMode) {
+    //             if ( size > maxSize - 3 ) fprintf(stdout,"Warning : midi buffer overflow when inserting SHIFT key release !!\n");
+    //             memcpy( &myBuff[i + 3 ], &myBuff[i], size - i );
+    //             size +=3;
+    //             myBuff[i + 1] = SHIFT_KEY_VALUE ;   myBuff[i + 2] =  0x00 ; // Button SHIFT release insert
+    //             i += 3 ;
+    //           }
+    //       }
+    //     }
+    //     else { // Shift at destination
+    //       if ( myBuff[i + 2] ==  0x7f ) { // Key press
+    //         if ( ! ShiftHoldedMode) {
+    //           if ( size > maxSize - 3 ) fprintf(stdout,"Warning : midi buffer overflow when inserting SHIFT key press !!\n");
+    //           memcpy( &myBuff[i + 3 ], &myBuff[i], size - i );
+    //           size +=3;
+    //           myBuff[i + 1] = SHIFT_KEY_VALUE ;   myBuff[i + 2] =  0x07 ; // Button SHIFT press insert
+    //           i += 3 ;
+    //         }
+    //       }
+    //       mapValue -= 0x80 ;
+    //     }
+    //
+    //
+    //     // Key press Post mapping
+    //     // Activate the special column mode when Force spoofed on a MPC
+    //     // Colum mode Button pressed
+    //     switch ( mapValue ) {
+    //       case FORCE_MUTE:
+    //       case FORCE_SOLO:
+    //       case FORCE_REC_ARM:
+    //       case FORCE_CLIP_STOP:
+    //         if ( myBuff[i+2] == 0x7F ) { // Key press
+    //             MPC_ForceColumnMode = mapValue ;
+    //             Mpc_DrawPadLineFromForceCache(8, MPC_PadOffsetC, 3);
+    //             Mpc_ShowForceMatrixQuadran(MPC_PadOffsetL, MPC_PadOffsetC);
+    //         }
+    //         else {
+    //           MPC_ForceColumnMode = -1;
+    //           Mpc_ResfreshPadsColorFromForceCache(MPC_PadOffsetL,MPC_PadOffsetC,4);
+    //         }
+    //         break;
+    //     }
+    //     myBuff[i + 1] = mapValue ;
+    //
+    //     i += 3;
+    //     continue; // next msg
+    //   }
 
       // PADS ------------------------------------------------------------------
       if (  myBuff[i] == 0x99 || myBuff[i] == 0x89 || myBuff[i] == 0xA9 ) {
@@ -2592,9 +2597,9 @@ static ssize_t AllMpcProcessRead( uint8_t * buffer, size_t maxSize, ssize_t size
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-// PROCESS PADS MIDI EVENT RECEIVE FROM MPC/FORCE  DEVICE
+// PROCESS PADS MIDI EVENT RECEIVED FROM MPC/FORCE  DEVICE
 ///////////////////////////////////////////////////////////////////////////////
-int AllMpc_MapPadFromDevice(uint8_t * buffer, ssize_t size) {
+int AllMpc_MapPadFromDevice(uint8_t * buffer, ssize_t size, size_t maxSize ) {
 
   int r = - 1 ;
   if ( ( MPC_OriginalId != MPC_FORCE && MPC_Id != MPC_FORCE )
@@ -2605,7 +2610,7 @@ int AllMpc_MapPadFromDevice(uint8_t * buffer, ssize_t size) {
     r = size ;
   }
   else {
-    // Remap Force hardware pad
+    // Remap Force hardware pad to MPC Pads
     if ( MPC_OriginalId == MPC_FORCE ) {
 
       // Remap Force hardware pad
@@ -2627,7 +2632,7 @@ int AllMpc_MapPadFromDevice(uint8_t * buffer, ssize_t size) {
       }
 
     }
-    // Remap MPC hardware pad
+    // Remap MPC hardware pad to Force pad + special function
     else {
       uint8_t padM = MPCPadsTable[buffer[1] - MPCPADS_TABLE_IDX_OFFSET ];
       uint8_t padL = padM / 4  ;
@@ -2727,6 +2732,130 @@ int AllMpc_MapPadFromDevice(uint8_t * buffer, ssize_t size) {
   return r;
 }
 
+///////////////////////////////////////////////////////////////////////////////
+// PROCESS BUTTONS MIDI EVENT RECEIVED FROM MPC/FORCE  DEVICE
+///////////////////////////////////////////////////////////////////////////////
+int AllMpc_MapButtonFromDevice( uint8_t * buffer, ssize_t size, size_t maxSize ) {
+  int r = - 1 ;
+
+  uint8_t buttonId = buffer[1];
+  bool buttonPressed = ( buffer[2] == 0x7F ? true:false ) ;
+  bool qLink = false;
+
+  // Not mappable keys ---------------------------------------------------------
+
+  // Shift is universal
+  if (  buttonId == SHIFT_KEY_VALUE   ) {
+    ShiftHoldedMode = buttonPressed ;
+    return size;
+  }
+
+  // Qlink : MPC : 90 [54-63] 7F   Force : 90 53-5a 7f
+  if (   ( MPC_OriginalId == MPC_FORCE && buttonId >= 0x53 && buttonId <= 0x5A )
+      || ( MPC_OriginalId != MPC_FORCE && buttonId >= 0x54 && buttonId <= 0x63 )
+    )
+  {
+    // If it's a shift + knob "touch", add the offset
+    if (  DeviceInfoBloc[MPC_OriginalId].qlinkKnobsCount < 16 && ShiftHoldedMode ) {
+        buffer[1] += DeviceInfoBloc[MPC_OriginalId].qlinkKnobsCount;
+    }
+
+    if ( MPC_OriginalId != MPC_Id && ( MPC_OriginalId == MPC_FORCE || MPC_Id == MPC_FORCE ) ) {
+      buffer[1] += ( MPC_OriginalId == MPC_FORCE ? 1 : -1 ) ;
+    }
+    return size;
+  }
+
+  // Mappable keys -------------------------------------------------------------
+
+  // SHIFT button is currently holded
+  // Look for shift mapping above 0x7F
+  // If the SHIFT mapping is also activated at destination, and as the shift key
+  // is currently holded, we send only the corresponding button, that will
+  // generate the shift + button code, Otherwise, we must release the shift key,
+  //  by inserting a shift key note off
+  uint8_t mapValue;
+
+  if ( ShiftHoldedMode ) {
+      if ( (mapValue = map_ButtonsLeds[ buttonId + 0x80  ] ) >= 0 ) {
+
+        if ( mapValue >= 0x80 ) buffer[1] = mapValue - 0x80;   // Shift mapped also at destination
+
+        else {
+          // We are holding shift, but the dest key is not a SHIFT mapping
+          // insert SHIFT BUTTON release in the midi buffer
+          // (we assume brutally we have room; Should check max size)
+          if ( size > maxSize - 3 ) {
+            tklog_error("Midi buffer overflow when inserting SHIFT note off !!\n");
+            return -1;
+          }
+          // make room for the shift key in the buffer
+          memcpy( &buffer[3], buffer, size - 3 );
+          size += 3;
+          buffer[1] = SHIFT_KEY_VALUE ;
+          buffer[2] = 0x00 ; // Button released
+          // Now, map our Key
+          buffer +=3;
+          buffer[1] = mapValue;
+        }
+      }
+      else if ( ( mapValue = map_ButtonsLeds[ buttonId ] ) >= 0 ) {
+        // If no shift mapping, use the normal mapping
+        buffer[1] = mapValue  ;
+      }
+      else { // No Mapping
+        PrepareFakeMidiMsg(buffer);
+        return 0;
+      }
+  }
+  // Not in  Shift mode
+  else if ( ( mapValue = map_ButtonsLeds[ buttonId ] ) >= 0  ) {
+    buffer[1] = mapValue  ;
+  }
+  else  {  // No mapping
+    PrepareFakeMidiMsg(buffer);
+    return 0;
+  }
+
+  // Specific Hardware Mapping -------------------------------------------------
+  if ( ( MPC_OriginalId != MPC_FORCE && MPC_Id != MPC_FORCE )
+       || (  MPC_OriginalId == MPC_Id ) )
+  {
+    // Any MPC to any MPC or Force to Force : no spoofing at all
+    // Nothing to do
+    return size ;
+  }
+  else {
+    // Remap Force hardware button to MPC button
+    if ( MPC_OriginalId == MPC_FORCE ) {
+
+    }
+    // Remap MPC Hardware button to MPC button
+    else {
+      // Key press Post mapping
+      // Activate the special column mode when Force spoofed on a MPC
+      // Colum mode Button pressed
+      switch ( mapValue ) {
+        case FORCE_MUTE:
+        case FORCE_SOLO:
+        case FORCE_REC_ARM:
+        case FORCE_CLIP_STOP:
+          if ( buffer[2] == 0x7F ) { // Key press
+              MPC_ForceColumnMode = mapValue ;
+              Mpc_DrawPadLineFromForceCache(8, MPC_PadOffsetC, 3);
+              Mpc_ShowForceMatrixQuadran(MPC_PadOffsetL, MPC_PadOffsetC);
+          }
+          else {
+            MPC_ForceColumnMode = -1;
+            Mpc_ResfreshPadsColorFromForceCache(MPC_PadOffsetL,MPC_PadOffsetC,4);
+          }
+          break;
+      }
+      return size;
+    }
+  }
+  return r;
+}
 
 ///////////////////////////////////////////////////////////////////////////////
 // Alsa Rawmidi read
