@@ -45,7 +45,8 @@ __ __| |           |  /_) |     ___|             |           |\n\
 
 // Router
 #define ROUTER_SEQ_NAME "TKGL MIDI router"
-#define MIDI_DECODER_SIZE 128
+
+#define MIDI_DECODER_SIZE 256
 
 // MPC Controller names (regexp) - Use aconnect -l
 #define CTRL_FORCE "Akai Pro Force"

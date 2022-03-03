@@ -65,6 +65,11 @@ your own midi mapping to input and output midi messages.
 
 // Function prototypes ---------------------------------------------------------
 
+static void ShowBufferHexDump(const uint8_t* data, ssize_t sz, uint8_t nl);
+static ssize_t AllMpcProcessRead( uint8_t *buffer, size_t maxSize, ssize_t size, bool isSysex );
+
+int AllMpc_MapPadFromDevice(uint8_t * buffer, ssize_t size) ;
+
 // Globals ---------------------------------------------------------------------
 
 // Ports and clients used by mpcmapper and router thread
@@ -845,7 +850,7 @@ static void dump_event(const snd_seq_event_t *ev)
 ///////////////////////////////////////////////////////////////////////////////
 // Alsa SEQ raw write to a seq port
 ///////////////////////////////////////////////////////////////////////////////
-int SeqSendMidiMsg(snd_seq_t *seqHandle, uint8_t port,  const uint8_t *message, size_t size )
+int SeqSendRawMidi(snd_seq_t *seqHandle, uint8_t port,  const uint8_t *message, size_t size )
 {
   static snd_midi_event_t * midiParser = NULL;
 
@@ -879,6 +884,92 @@ int SeqSendMidiMsg(snd_seq_t *seqHandle, uint8_t port,  const uint8_t *message, 
 }
 
 ///////////////////////////////////////////////////////////////////////////////
+// Alsa SEQ : get an event as raw mdii data
+///////////////////////////////////////////////////////////////////////////////
+ssize_t SeqReadEventRawMidi(snd_seq_event_t *ev,void *buffer, size_t size) {
+
+    static snd_midi_event_t * midiParser = NULL;
+    int r = -1;
+
+    // Start the MIDI parser
+    if (midiParser == NULL ) {
+     if (snd_midi_event_new(MIDI_DECODER_SIZE, &midiParser ) < 0) return -1;
+     snd_midi_event_init(midiParser);
+     snd_midi_event_no_status(midiParser,1); // No running status
+    }
+
+    if ( size > MIDI_DECODER_SIZE ) {
+      snd_midi_event_free (midiParser);
+      snd_midi_event_new (size, &midiParser);
+    }
+
+    if (ev->type == SND_SEQ_EVENT_SYSEX) {
+        // With sysex, we need to forward in the event queue to get all the data
+        r = ev->data.ext.len;
+        if ( r > size ) {
+          tklog_error("Sysex buffer overflow in SeqReadEventRawMidi : %d / %d.\n",r,size);
+          r = -1;
+        } else memcpy(buffer,ev->data.ext.ptr, r );
+    }
+    else {
+        r = snd_midi_event_decode (midiParser, buffer, size, ev);
+        snd_midi_event_reset_encode (midiParser);
+    }
+
+    return r;
+}
+
+// // Do not use...
+// int SeqGetRawMidi(snd_seq_t *seqHandle,void *buffer, size_t size) {
+//
+//   snd_seq_event_t* ev;
+//   static snd_midi_event_t * midiParser = NULL;
+//   int bytes_read = 0;
+//   int err;
+//
+//   // Start the MIDI parser
+//   if (midiParser == NULL ) {
+//    if (snd_midi_event_new(MIDI_DECODER_SIZE, &midiParser ) < 0) return -1;
+//    snd_midi_event_init(midiParser);
+//    snd_midi_event_no_status(midiParser,1); // No running status
+//   }
+//
+//   if ( size > MIDI_DECODER_SIZE ) {
+//     snd_midi_event_free (midiParser);
+//     snd_midi_event_new (size, &midiParser);
+//   }
+//
+//   do
+//   {
+//     if ( snd_seq_event_input(seqHandle, &ev) > 0 ) {
+//
+//       if (ev->type == SND_SEQ_EVENT_SYSEX) {
+//             err = ev->data.ext.len;
+//       			memcpy(buffer,ev->data.ext.ptr,err);
+//       }
+//       else {
+//         err = snd_midi_event_decode (midiParser, buffer, size, ev);
+//       }
+//
+//
+//   	  if (err > 0) {
+//   	      buffer += err;
+//           size -= err;
+//   	      bytes_read += err;
+//   	  }
+//   	  else ; // error or buffer full -> drop midi event
+//   	}
+//
+//     //snd_seq_free_event( ev );  DEPRECATED
+//    } while (snd_seq_event_input_pending(seqHandle, 0) > 0);
+//
+//
+// return bytes_read;
+//
+// }
+
+
+///////////////////////////////////////////////////////////////////////////////
 // LaunchPad 3
 ///////////////////////////////////////////////////////////////////////////////
 void ControllerScrollText(TkRouter_t *rp,const char *message,uint8_t loop, uint8_t speed, uint32_t rgbColor) {
@@ -901,15 +992,15 @@ void ControllerScrollText(TkRouter_t *rp,const char *message,uint8_t loop, uint8
   pbuff += strlen(message);
   *(pbuff ++ ) = 0xF7;
 
-  SeqSendMidiMsg(rp->seq, rp->portCtrl,  buffer, pbuff - buffer );
+  SeqSendRawMidi(rp->seq, rp->portCtrl,  buffer, pbuff - buffer );
 
 }
 
 int ControllerInitialize(TkRouter_t *rp) {
 
-  SeqSendMidiMsg(rp->seq, rp->portCtrl,  SX_LPMK3_STDL_MODE, sizeof(SX_LPMK3_STDL_MODE) );
-  SeqSendMidiMsg(rp->seq, rp->portCtrl,  SX_LPMK3_DAW_CLEAR, sizeof(SX_LPMK3_DAW_CLEAR) );
-  SeqSendMidiMsg(rp->seq, rp->portCtrl,  SX_LPMK3_PGM_MODE, sizeof(SX_LPMK3_PGM_MODE) );
+  SeqSendRawMidi(rp->seq, rp->portCtrl,  SX_LPMK3_STDL_MODE, sizeof(SX_LPMK3_STDL_MODE) );
+  SeqSendRawMidi(rp->seq, rp->portCtrl,  SX_LPMK3_DAW_CLEAR, sizeof(SX_LPMK3_DAW_CLEAR) );
+  SeqSendRawMidi(rp->seq, rp->portCtrl,  SX_LPMK3_PGM_MODE, sizeof(SX_LPMK3_PGM_MODE) );
 
   ControllerScrollText(rp,"The KikGen Labs - - - IamForce",0,21,COLOR_SEA);
 
@@ -918,9 +1009,10 @@ int ControllerInitialize(TkRouter_t *rp) {
   midiMsg[1]=0x63;
   midiMsg[2]=0x2D;
 
-  SeqSendMidiMsg(rp->seq, rp->portCtrl,midiMsg,3);
+  SeqSendRawMidi(rp->seq, rp->portCtrl,midiMsg,3);
 
 }
+
 
 ///////////////////////////////////////////////////////////////////////////////
 // MIDI EVEN PROCESS AND ROUTE (IN A sub THREAD)
@@ -928,34 +1020,82 @@ int ControllerInitialize(TkRouter_t *rp) {
 void threadMidiProcessAndRoute(TkRouter_t *rp) {
 
   snd_seq_event_t *ev;
-  uint8_t *buff ;
+  uint8_t buffer[MIDI_DECODER_SIZE] ;
+  ssize_t size = 0;
 
   do {
-      snd_seq_event_input(rp->seq, &ev);
+      int r = snd_seq_event_input(rp->seq, &ev) ;
+      if (  r  <= 0 )  continue;
+
+      // Get a raw bytes buffer from event
+      size =  SeqReadEventRawMidi(ev,buffer, sizeof(buffer)) ;
+      if ( size <= 0 ) continue;
+
+
+
       snd_seq_ev_set_subs(ev);
       snd_seq_ev_set_direct(ev);
 
-      buff = ((uint8_t*)ev->data.ext.ptr) ;
-      ssize_t size = ev->data.ext.len;
-
       // Events from MPC application - Write Private
       if ( ev->source.client == rp->Virt.cliPrivOut ) {
-        tklog_info("Event received rawmidi virtual write private ...\n");
-        //SeqRawMidiWrite(rp->seq, rp->Mpc.cli, rp->mpcPrivatePort, buff,size );
+        //tklog_info("Event received rawmidi virtual write private ...\n");
+        // Route to Mpc hw port public
+        snd_seq_ev_set_source(ev, rp->portMpcPriv);
+        snd_seq_event_output_direct(rp->seq, ev);
       }
+
+      // Events from MPC application - Write Public
       else if ( ev->source.client == rp->Virt.cliPubOut ) {
         tklog_info("Event received rawmidi virtual write public ...\n");
+        ShowBufferHexDump(buffer,size,16);
         // Route to Mpc hw port public
         snd_seq_ev_set_source(ev, rp->portMpcPub);
         //snd_seq_ev_set_dest(ev, rp->Mpc.cli,rp->Mpc.portPub);
         snd_seq_event_output_direct(rp->seq, ev);
       }
+
+      // Response from MPC device
       else if ( ev->source.client == rp->Mpc.cli ) {
         if ( ev->source.port == rp->Mpc.portPriv ) {
-          tklog_info("Event received from MPC controller private\n");
+
+          switch (ev->type) {
+            case SND_SEQ_EVENT_NOTEON:
+            case SND_SEQ_EVENT_NOTEOFF:
+              // Mpc Pads on channel 9
+              if ( ev->data.control.channel == 9 ) {
+                AllMpc_MapPadFromDevice( buffer,sizeof(buffer) );
+              }
+              break;
+
+          }
+
+
+          // AllMpc_ProcessPad(buffer,sizof(buffer));
+          // AllMpc_ProcessButton(buffer,sizof(buffer));
+          // AllMpc_ProcessLed(buffer,sizof(buffer));
+          // AllMpc_ProcessSetColor(buffer,sizof(buffer));
+          // AllMpc_ProcessQlink(buffer,sizof(buffer))
+
+
+
+          tklog_info("Before SIZE : %d\n",size);
+          ShowBufferHexDump(buffer,size,16);
+
+
+          int r = AllMpcProcessRead( buffer, sizeof(buffer),size, ( ev->type == SND_SEQ_EVENT_SYSEX)  ) ;
+          if ( r > 0 ) SeqSendRawMidi(rp->seq, rp->portPriv,  buffer, r );
+
+          tklog_info("After SIZE : %d\n",r);
+          ShowBufferHexDump(buffer,size,16);
+
+
+
+  //        ShowBufferHexDump(buffer,size,16);
+
           //snd_seq_ev_set_dest(ev, rp->Virt.cliPrivIn,0);
-          snd_seq_ev_set_source(ev, rp->portPriv);
-          snd_seq_event_output_direct(rp->seq, ev);
+
+//          snd_seq_ev_set_source(ev, rp->portPriv);
+//          snd_seq_event_output_direct(rp->seq, ev);
         }
       }
       // Events from external controller
@@ -966,7 +1106,7 @@ void threadMidiProcessAndRoute(TkRouter_t *rp) {
 
       //dump_event(ev);
       //tklog_info("\n\n");
-      snd_seq_free_event(ev);
+      // snd_seq_free_event(ev); DEPRECATED
 
   } while (snd_seq_event_input_pending(rp->seq, 0) > 0);
 }
@@ -1256,7 +1396,7 @@ static void tkgl_init()
 ////////////////////////////////////////////////////////////////////////////////
 // Clean DUMP of a buffer to screen
 ////////////////////////////////////////////////////////////////////////////////
-static void ShowBufferHexDump(const uint8_t* data, size_t sz, uint8_t nl)
+static void ShowBufferHexDump(const uint8_t* data, ssize_t sz, uint8_t nl)
 {
     uint8_t b;
     char asciiBuff[33];
@@ -1480,7 +1620,6 @@ int snd_rawmidi_close	(	snd_rawmidi_t * 	rawmidi	)
 	return orig_snd_rawmidi_close(rawmidi);
 }
 
-
 ///////////////////////////////////////////////////////////////////////////////
 // Refresh MPC pads colors from Force PAD Colors cache
 ///////////////////////////////////////////////////////////////////////////////
@@ -1700,103 +1839,103 @@ static size_t Mpc_MapReadFromForce(void *midiBuffer, size_t maxSize,size_t size)
       // PADS ------------------------------------------------------------------
       if (  myBuff[i] == 0x99 || myBuff[i] == 0x89 || myBuff[i] == 0xA9 ) {
 
-        // Remap MPC hardware pad
-        // Get MPC pad id in the true order
-        uint8_t padM = MPCPadsTable[myBuff[i+1] - MPCPADS_TABLE_IDX_OFFSET ];
-        uint8_t padL = padM / 4  ;
-        uint8_t padC = padM % 4  ;
-
-        // Compute the Force pad id without offset
-        uint8_t padF = ( 3 - padL + MPC_PadOffsetL ) * 8 + padC + MPC_PadOffsetC ;
-
-        if (  ShiftHoldedMode || MPC_ForceColumnMode >= 0  ) {
-          // Ignore aftertouch in special pad modes
-          if ( myBuff[i] == 0xA9 ) {
-              PrepareFakeMidiMsg(&myBuff[i]);
-              i += 3;
-              continue; // next msg
-          }
-
-          uint8_t buttonValue = 0x7F;
-          uint8_t offsetC = MPC_PadOffsetC;
-          uint8_t offsetL = MPC_PadOffsetL;
-
-          // Columns solo mute mode on first pad line
-          if ( MPC_ForceColumnMode >= 0 &&  padL == 3  ) padM = 0x7F ; // Simply to pass in the switch case
-          // LAUNCH ROW SHIFT + PAD  in column 0 = Launch the corresponding line
-          else if ( ShiftHoldedMode && padC == 0 ) padM = 0x7E ; // Simply to pass in the switch case
-
-          switch (padM) {
-            // COlumn pad mute,solo   Pads botom line  90 29-30 00/7f
-            case 0x7F:
-              buttonValue = 0x29 + padC + MPC_PadOffsetC;
-              break;
-            // Launch row.
-            case 0x7E:
-              buttonValue = padF / 8 + 56; // Launch row
-              break;
-            // Matrix Navigation left Right  Up Down need shift
-            case 9:
-              if ( ShiftHoldedMode) buttonValue = FORCE_LEFT;
-              break;
-            case 11:
-              if ( ShiftHoldedMode) buttonValue = FORCE_RIGHT;
-              break;
-            case 14:
-              if ( ShiftHoldedMode) buttonValue = FORCE_UP;
-              break;
-            case 10:
-              if ( ShiftHoldedMode) buttonValue = FORCE_DOWN;
-              break;
-            // PAd as quadran
-            case 6:
-              if ( MPC_ForceColumnMode >= 0 ) { offsetL = offsetC = 0; }
-              break;
-            case 7:
-              if ( MPC_ForceColumnMode >= 0 ) { offsetL = 0; offsetC = 4; }
-              break;
-            case 2:
-              if ( MPC_ForceColumnMode >= 0 ) { offsetL = 4; offsetC = 0; }
-              break;
-            case 3:
-              if ( MPC_ForceColumnMode >= 0 ) { offsetL = 4; offsetC = 4; }
-              break;
-            default:
-              PrepareFakeMidiMsg(&myBuff[i]);
-              i += 3;
-              continue; // next msg
-          }
-
-          // Simulate a button press/release
-          // to navigate in the matrix , to start a raw, to manage solo mute
-          if ( buttonValue != 0x7F )  {
-              //tklog_debug("Matrix shit pad fn = %d \n", buttonValue) ;
-              myBuff[i+2] = ( myBuff[i] == 0x99 ? 0x7F:0x00 ) ;
-              myBuff[i]   = 0x90; // MPC Button
-              myBuff[i+1] = buttonValue;
-              i += 3;
-              continue; // next msg
-          }
-
-          // Column button + pad as quadran
-          if ( ( MPC_PadOffsetL != offsetL )  || ( MPC_PadOffsetC != offsetC ) )  {
-            MPC_PadOffsetL = offsetL ;
-            MPC_PadOffsetC = offsetC ;
-            //tklog_debug("Quadran nav = %d \n", buttonValue) ;
-            Mpc_ResfreshPadsColorFromForceCache(MPC_PadOffsetL,MPC_PadOffsetC,4);
-            Mpc_ShowForceMatrixQuadran(MPC_PadOffsetL, MPC_PadOffsetC);
-            PrepareFakeMidiMsg(&myBuff[i]);
-            i += 3;
-            continue; // next msg
-          }
-
-          // Should not be here
-          PrepareFakeMidiMsg(&myBuff[i]);
-
-        }
-
-        // Pad as usual
-        else  myBuff[i+1] = padF + FORCEPADS_TABLE_IDX_OFFSET;
+        // // Remap MPC hardware pad
+        // // Get MPC pad id in the true order
+        // uint8_t padM = MPCPadsTable[myBuff[i+1] - MPCPADS_TABLE_IDX_OFFSET ];
+        // uint8_t padL = padM / 4  ;
+        // uint8_t padC = padM % 4  ;
+        //
+        // // Compute the Force pad id without offset
+        // uint8_t padF = ( 3 - padL + MPC_PadOffsetL ) * 8 + padC + MPC_PadOffsetC ;
+        //
+        // if (  ShiftHoldedMode || MPC_ForceColumnMode >= 0  ) {
+        //   // Ignore aftertouch in special pad modes
+        //   if ( myBuff[i] == 0xA9 ) {
+        //       PrepareFakeMidiMsg(&myBuff[i]);
+        //       i += 3;
+        //       continue; // next msg
+        //   }
+        //
+        //   uint8_t buttonValue = 0x7F;
+        //   uint8_t offsetC = MPC_PadOffsetC;
+        //   uint8_t offsetL = MPC_PadOffsetL;
+        //
+        //   // Columns solo mute mode on first pad line
+        //   if ( MPC_ForceColumnMode >= 0 &&  padL == 3  ) padM = 0x7F ; // Simply to pass in the switch case
+        //   // LAUNCH ROW SHIFT + PAD  in column 0 = Launch the corresponding line
+        //   else if ( ShiftHoldedMode && padC == 0 ) padM = 0x7E ; // Simply to pass in the switch case
+        //
+        //   switch (padM) {
+        //     // COlumn pad mute,solo   Pads botom line  90 29-30 00/7f
+        //     case 0x7F:
+        //       buttonValue = 0x29 + padC + MPC_PadOffsetC;
+        //       break;
+        //     // Launch row.
+        //     case 0x7E:
+        //       buttonValue = padF / 8 + 56; // Launch row
+        //       break;
+        //     // Matrix Navigation left Right  Up Down need shift
+        //     case 9:
+        //       if ( ShiftHoldedMode) buttonValue = FORCE_LEFT;
+        //       break;
+        //     case 11:
+        //       if ( ShiftHoldedMode) buttonValue = FORCE_RIGHT;
+        //       break;
+        //     case 14:
+        //       if ( ShiftHoldedMode) buttonValue = FORCE_UP;
+        //       break;
+        //     case 10:
+        //       if ( ShiftHoldedMode) buttonValue = FORCE_DOWN;
+        //       break;
+        //     // PAd as quadran
+        //     case 6:
+        //       if ( MPC_ForceColumnMode >= 0 ) { offsetL = offsetC = 0; }
+        //       break;
+        //     case 7:
+        //       if ( MPC_ForceColumnMode >= 0 ) { offsetL = 0; offsetC = 4; }
+        //       break;
+        //     case 2:
+        //       if ( MPC_ForceColumnMode >= 0 ) { offsetL = 4; offsetC = 0; }
+        //       break;
+        //     case 3:
+        //       if ( MPC_ForceColumnMode >= 0 ) { offsetL = 4; offsetC = 4; }
+        //       break;
+        //     default:
+        //       PrepareFakeMidiMsg(&myBuff[i]);
+        //       i += 3;
+        //       continue; // next msg
+        //   }
+        //
+        //   // Simulate a button press/release
+        //   // to navigate in the matrix , to start a raw, to manage solo mute
+        //   if ( buttonValue != 0x7F )  {
+        //       //tklog_debug("Matrix shit pad fn = %d \n", buttonValue) ;
+        //       myBuff[i+2] = ( myBuff[i] == 0x99 ? 0x7F:0x00 ) ;
+        //       myBuff[i]   = 0x90; // MPC Button
+        //       myBuff[i+1] = buttonValue;
+        //       i += 3;
+        //       continue; // next msg
+        //   }
+        //
+        //   // Column button + pad as quadran
+        //   if ( ( MPC_PadOffsetL != offsetL )  || ( MPC_PadOffsetC != offsetC ) )  {
+        //     MPC_PadOffsetL = offsetL ;
+        //     MPC_PadOffsetC = offsetC ;
+        //     //tklog_debug("Quadran nav = %d \n", buttonValue) ;
+        //     Mpc_ResfreshPadsColorFromForceCache(MPC_PadOffsetL,MPC_PadOffsetC,4);
+        //     Mpc_ShowForceMatrixQuadran(MPC_PadOffsetL, MPC_PadOffsetC);
+        //     PrepareFakeMidiMsg(&myBuff[i]);
+        //     i += 3;
+        //     continue; // next msg
+        //   }
+        //
+        //   // Should not be here
+        //   PrepareFakeMidiMsg(&myBuff[i]);
+        //
+        // }
+        //
+        // // Pad as usual
+        // else  myBuff[i+1] = padF + FORCEPADS_TABLE_IDX_OFFSET;
 
         i += 3;
 
@@ -2275,21 +2414,21 @@ static size_t Force_MapReadFromMpc(void *midiBuffer, size_t maxSize,size_t size)
       else
       if (  myBuff[i] == 0x99 || myBuff[i] == 0x89 || myBuff[i] == 0xA9 ) {
 
-          // Remap Force hardware pad
-          uint8_t padF = myBuff[i+1] - FORCEPADS_TABLE_IDX_OFFSET ;
-          uint8_t padL = padF / 8 ;
-          uint8_t padC = padF % 8 ;
-
-          if ( padC >= 2 && padC < 6  && padL > 3  ) {
-
-            // Compute the MPC pad id
-            uint8_t p = ( 3 - padL % 4 ) * 4 + (padC -2) % 4;
-            myBuff[i+1] = MPCPadsTable2[p];
-
-          } else {
-            // Fake event
-            PrepareFakeMidiMsg(&myBuff[i]);
-          }
+          // // Remap Force hardware pad
+          // uint8_t padF = myBuff[i+1] - FORCEPADS_TABLE_IDX_OFFSET ;
+          // uint8_t padL = padF / 8 ;
+          // uint8_t padC = padF % 8 ;
+          //
+          // if ( padC >= 2 && padC < 6  && padL > 3  ) {
+          //
+          //   // Compute the MPC pad id
+          //   uint8_t p = ( 3 - padL % 4 ) * 4 + (padC -2) % 4;
+          //   myBuff[i+1] = MPCPadsTable2[p];
+          //
+          // } else {
+          //   // Fake event
+          //   PrepareFakeMidiMsg(&myBuff[i]);
+          // }
 
 
         i += 3;
@@ -2413,6 +2552,183 @@ static void Force_MapAppWriteToForce(const void *midiBuffer, size_t size) {
 }
 
 ///////////////////////////////////////////////////////////////////////////////
+// PROCESS MIDI EVENT RECEIVE FROM AN MPC/Force DEVICE
+///////////////////////////////////////////////////////////////////////////////
+static ssize_t AllMpcProcessRead( uint8_t * buffer, size_t maxSize, ssize_t size, bool isSysex ) {
+
+  int r = 0;
+
+  // If it is a sysex chunk packet, we do not process it
+  // We manage only sysex headers and short messages.
+  // The biggest sysex msg is sent at startup by the MPC to read alls buttons and leds state.
+  // Size : 2 * 256 + 87 bytes
+  if ( isSysex && buffer[0] != 0xF0 ) return size;
+
+  // We are running on a Force
+  if ( MPC_OriginalId == MPC_FORCE ) {
+    // We want to map things on Force it self
+    if ( MPC_Id == MPC_FORCE ) {
+      r = Force_MapReadFromForce(buffer,maxSize,size);
+    }
+    // Simulate a MPC on a Force
+    else {
+      r = Force_MapReadFromMpc(buffer,maxSize,size);
+    }
+  }
+  // We are running on a MPC
+  else {
+    // We need to remap on a MPC it self
+    if ( MPC_Id != MPC_FORCE ) {
+      r = Mpc_MapReadFromMpc(buffer,maxSize,size);
+    }
+    // Simulate a Force on a MPC
+    else {
+      r = Mpc_MapReadFromForce(buffer,maxSize,size);
+    }
+  }
+
+  return r;
+
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// PROCESS PADS MIDI EVENT RECEIVE FROM MPC/FORCE  DEVICE
+///////////////////////////////////////////////////////////////////////////////
+int AllMpc_MapPadFromDevice(uint8_t * buffer, ssize_t size) {
+
+  int r = - 1 ;
+  if ( ( MPC_OriginalId != MPC_FORCE && MPC_Id != MPC_FORCE )
+       || (  MPC_OriginalId == MPC_Id ) )
+  {
+    // Any MPC to any MPC or Force to Force : no spoofing at all
+    // Nothing to do
+    r = size ;
+  }
+  else {
+    // Remap Force hardware pad
+    if ( MPC_OriginalId == MPC_FORCE ) {
+
+      // Remap Force hardware pad
+      uint8_t padF = buffer[1] - FORCEPADS_TABLE_IDX_OFFSET ;
+      uint8_t padL = padF / 8 ;
+      uint8_t padC = padF % 8 ;
+
+      if ( padC >= 2 && padC < 6  && padL > 3  ) {
+
+        // Compute the MPC pad id
+        uint8_t p = ( 3 - padL % 4 ) * 4 + (padC -2) % 4;
+        buffer[1] = MPCPadsTable2[p];
+
+      }
+      else {
+        // Fake event
+        PrepareFakeMidiMsg(buffer);
+        return 0;
+      }
+
+    }
+    // Remap MPC hardware pad
+    else {
+      uint8_t padM = MPCPadsTable[buffer[1] - MPCPADS_TABLE_IDX_OFFSET ];
+      uint8_t padL = padM / 4  ;
+      uint8_t padC = padM % 4  ;
+
+      // Compute the Force pad id without offset
+      uint8_t padF = ( 3 - padL + MPC_PadOffsetL ) * 8 + padC + MPC_PadOffsetC ;
+      if (  ShiftHoldedMode || MPC_ForceColumnMode >= 0  ) {
+        // Ignore aftertouch in special pad modes
+        if ( buffer[0] == 0xA9 ) {
+            PrepareFakeMidiMsg(buffer);
+            return 0 ; // next msg
+        }
+
+        uint8_t buttonValue = 0x7F;
+        uint8_t offsetC = MPC_PadOffsetC;
+        uint8_t offsetL = MPC_PadOffsetL;
+
+        // Columns solo mute mode on first pad line
+        if ( MPC_ForceColumnMode >= 0 &&  padL == 3  ) padM = 0x7F ; // Simply to pass in the switch case
+        // LAUNCH ROW SHIFT + PAD  in column 0 = Launch the corresponding line
+        else if ( ShiftHoldedMode && padC == 0 ) padM = 0x7E ; // Simply to pass in the switch case
+
+        switch (padM) {
+          // COlumn pad mute,solo   Pads botom line  90 29-30 00/7f
+          case 0x7F:
+            buttonValue = 0x29 + padC + MPC_PadOffsetC;
+            break;
+          // Launch row.
+          case 0x7E:
+            buttonValue = padF / 8 + 56; // Launch row
+            break;
+          // Matrix Navigation left Right  Up Down need shift
+          case 9:
+            if ( ShiftHoldedMode) buttonValue = FORCE_LEFT;
+            break;
+          case 11:
+            if ( ShiftHoldedMode) buttonValue = FORCE_RIGHT;
+            break;
+          case 14:
+            if ( ShiftHoldedMode) buttonValue = FORCE_UP;
+            break;
+          case 10:
+            if ( ShiftHoldedMode) buttonValue = FORCE_DOWN;
+            break;
+          // PAd as quadran
+          case 6:
+            if ( MPC_ForceColumnMode >= 0 ) { offsetL = offsetC = 0; }
+            break;
+          case 7:
+            if ( MPC_ForceColumnMode >= 0 ) { offsetL = 0; offsetC = 4; }
+            break;
+          case 2:
+            if ( MPC_ForceColumnMode >= 0 ) { offsetL = 4; offsetC = 0; }
+            break;
+          case 3:
+            if ( MPC_ForceColumnMode >= 0 ) { offsetL = 4; offsetC = 4; }
+            break;
+          default:
+            PrepareFakeMidiMsg(buffer);
+            return 0;
+        }
+
+        // Simulate a button press/release
+        // to navigate in the matrix , to start a raw, to manage solo mute
+        if ( buttonValue != 0x7F )  {
+            //tklog_debug("Matrix shit pad fn = %d \n", buttonValue) ;
+            buffer[2] = ( buffer[0] == 0x99 ? 0x7F:0x00 ) ;
+            buffer[0]   = 0x90; // MPC Button
+            buffer[1] = buttonValue;
+            return 3;; // next msg
+        }
+
+        // Column button + pad as quadran
+        if ( ( MPC_PadOffsetL != offsetL )  || ( MPC_PadOffsetC != offsetC ) )  {
+          MPC_PadOffsetL = offsetL ;
+          MPC_PadOffsetC = offsetC ;
+          //tklog_debug("Quadran nav = %d \n", buttonValue) ;
+          Mpc_ResfreshPadsColorFromForceCache(MPC_PadOffsetL,MPC_PadOffsetC,4);
+          Mpc_ShowForceMatrixQuadran(MPC_PadOffsetL, MPC_PadOffsetC);
+          PrepareFakeMidiMsg(buffer);
+          return 0;
+        }
+
+        // Should not be here
+        PrepareFakeMidiMsg(buffer);
+        return 0;
+      }
+
+      // Pad as usual
+      else  buffer[1] = padF + FORCEPADS_TABLE_IDX_OFFSET;
+
+      return 3 ;
+    }
+  }
+
+  return r;
+}
+
+
+///////////////////////////////////////////////////////////////////////////////
 // Alsa Rawmidi read
 ///////////////////////////////////////////////////////////////////////////////
 ssize_t snd_rawmidi_read(snd_rawmidi_t *rawmidi, void *buffer, size_t size) {
@@ -2420,42 +2736,42 @@ ssize_t snd_rawmidi_read(snd_rawmidi_t *rawmidi, void *buffer, size_t size) {
   //tklog_debug("snd_rawmidi_read %p : size : %u ", rawmidi, size);
 
 	ssize_t r = orig_snd_rawmidi_read(rawmidi, buffer, size);
-  if ( r < 0 ) {
-    tklog_error("snd_rawmidi_read error : (%p) size : %u  error %d\n", rawmidi, size,r);
-    return r;
-  }
-
-  if ( rawMidiDumpFlag  ) RawMidiDump(rawmidi, 'i','r' , buffer, r);
-
-
-  // Map in all cases if the app writes to the controller
-  if ( rawmidi == rawvirt_inpriv  ) {
-
-    // We are running on a Force
-    if ( MPC_OriginalId == MPC_FORCE ) {
-      // We want to map things on Force it self
-      if ( MPC_Id == MPC_FORCE ) {
-        r = Force_MapReadFromForce(buffer,size,r);
-      }
-      // Simulate a MPC on a Force
-      else {
-        r = Force_MapReadFromMpc(buffer,size,r);
-      }
-    }
-    // We are running on a MPC
-    else {
-      // We need to remap on a MPC it self
-      if ( MPC_Id != MPC_FORCE ) {
-        r = Mpc_MapReadFromMpc(buffer,size,r);
-      }
-      // Simulate a Force on a MPC
-      else {
-        r = Mpc_MapReadFromForce(buffer,size,r);
-      }
-    }
-  }
-
-  if ( rawMidiDumpPostFlag ) RawMidiDump(rawmidi, 'o','r' , buffer, r);
+  // if ( r < 0 ) {
+  //   tklog_error("snd_rawmidi_read error : (%p) size : %u  error %d\n", rawmidi, size,r);
+  //   return r;
+  // }
+  //
+  // if ( rawMidiDumpFlag  ) RawMidiDump(rawmidi, 'i','r' , buffer, r);
+  //
+  //
+  // // Map in all cases if the app writes to the controller
+  // if ( rawmidi == rawvirt_inpriv  ) {
+  //
+  //   // We are running on a Force
+  //   if ( MPC_OriginalId == MPC_FORCE ) {
+  //     // We want to map things on Force it self
+  //     if ( MPC_Id == MPC_FORCE ) {
+  //       r = Force_MapReadFromForce(buffer,size,r);
+  //     }
+  //     // Simulate a MPC on a Force
+  //     else {
+  //       r = Force_MapReadFromMpc(buffer,size,r);
+  //     }
+  //   }
+  //   // We are running on a MPC
+  //   else {
+  //     // We need to remap on a MPC it self
+  //     if ( MPC_Id != MPC_FORCE ) {
+  //       r = Mpc_MapReadFromMpc(buffer,size,r);
+  //     }
+  //     // Simulate a Force on a MPC
+  //     else {
+  //       r = Mpc_MapReadFromForce(buffer,size,r);
+  //     }
+  //   }
+  // }
+  //
+  // if ( rawMidiDumpPostFlag ) RawMidiDump(rawmidi, 'o','r' , buffer, r);
 
 	return r;
 }
