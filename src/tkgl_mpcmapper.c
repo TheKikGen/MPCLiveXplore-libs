@@ -74,6 +74,8 @@ int AllMpc_MapEncoderFromDevice( TkRouter_t *rp, uint8_t * buffer, ssize_t size,
 int AllMpc_MapLedToDevice( TkRouter_t *rp, uint8_t * buffer, ssize_t size, size_t maxSize );
 int AllMpc_MapSxPadColorToDevice( TkRouter_t *rp, uint8_t * buffer, ssize_t size, size_t maxSize );
 void Mpc_DrawPadLineFromForceCache(TkRouter_t *rp, uint8_t forcePadL, uint8_t forcePadC, uint8_t mpcPadL) ;
+static void Mpc_ShowForceMatrixQuadran(TkRouter_t *rp, uint8_t forcePadL, uint8_t forcePadC);
+
 // Globals ---------------------------------------------------------------------
 
 // Ports and clients used by mpcmapper and router thread
@@ -1094,14 +1096,49 @@ void threadMidiProcessAndRoute(TkRouter_t *rp) {
       // -----------------------------------------------------------------------
       else
       if ( ev->source.client == rp->Ctrl.cli && ev->source.port == rp->Ctrl.port) {
-        tklog_info("Event received from external controller...\n");
+        //dump_event(ev);
+        switch (ev->type) {
+          case SND_SEQ_EVENT_SYSEX:
+            break;
+
+
+          case SND_SEQ_EVENT_CONTROLLER:
+            // Buttons around pads
+            if ( ev->data.control.channel == 0 ) {
+              tklog_info("Button Event received from external controller...\n");
+              ShowBufferHexDump(buffer,size,16);
+
+                // = AllMpc_MapEncoderFromDevice( rp, buffer,size,sizeof(buffer) );
+            }
+            break;
+          case SND_SEQ_EVENT_NOTEON:
+          case SND_SEQ_EVENT_NOTEOFF:
+          case SND_SEQ_EVENT_CHANPRESS:
+            if ( ev->data.control.channel == 0 ) {
+              // Convert pad #
+              uint8_t padCt = buffer[1] - 11;
+              uint8_t padL  =  7 - padCt  /  10 ;
+              uint8_t padC  =  padCt  %  10 ;
+              uint8_t padF  = padL * 8 + padC + FORCEPADS_TABLE_IDX_OFFSET;
+
+              buffer[0] = ( buffer[0] & 0xF0 ) + 9; // Change midi channel to 9
+              buffer[1] = padF;
+
+              // Send to Mpc App private in
+              SeqSendRawMidi(rp->seq, rp->portPriv,  buffer, size );
+            }
+            break;
+        }
       }
 
   } while (snd_seq_event_input_pending(rp->seq, 0) > 0);
 
   // Take care of our eventual special options pad lines
-  if (   padsColorUpdated  && !ShiftHoldedMode && MPC_ForceColumnMode >= 0   )
+  if (   padsColorUpdated  && !ShiftHoldedMode && MPC_ForceColumnMode >= 0   ) {
       AllMpc_MapSxPadColorToDevice( rp ,NULL,0,0) ; // Refresh options command
+      Mpc_ShowForceMatrixQuadran(rp, MPC_PadOffsetL, MPC_PadOffsetC);
+  }
+
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -1579,7 +1616,6 @@ int snd_rawmidi_close	(	snd_rawmidi_t * 	rawmidi	)
 	return orig_snd_rawmidi_close(rawmidi);
 }
 
-
 ///////////////////////////////////////////////////////////////////////////////
 // Get MPC pad # from Force pad relatively to the current quadran
 ///////////////////////////////////////////////////////////////////////////////
@@ -1726,9 +1762,11 @@ int AllMpc_MapSxPadColorToDevice( TkRouter_t *rp, uint8_t * buffer, ssize_t size
 
     }
     else {
+
       // Refresh command
       if ( buffer == NULL && size == 0 && maxSize == 0 ) {
         Mpc_DrawPadLineFromForceCache(rp, 8, MPC_PadOffsetC, 3);
+
         return 0;
       }
 
@@ -1742,6 +1780,11 @@ int AllMpc_MapSxPadColorToDevice( TkRouter_t *rp, uint8_t * buffer, ssize_t size
 
       buffer[0] = Mpc_GetPadIndexFromForcePadIndex(padF) ;
 
+      // Set pad for external controller eventually
+      if ( rp->Ctrl.cli >= 0 ) {
+          uint8_t padCt = ( ( 7 - padF / 8 ) * 10 + 11 + padF % 8 );
+          ControllerSetPadColorRGB(rp,padCt, Force_PadColorsCache[padF].r, Force_PadColorsCache[padF].g,Force_PadColorsCache[padF].b);
+      }
     }
   }
 
