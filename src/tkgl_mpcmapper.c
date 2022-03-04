@@ -930,56 +930,6 @@ ssize_t SeqReadEventRawMidi(snd_seq_event_t *ev,void *buffer, size_t size) {
     return r;
 }
 
-// // Do not use...
-// int SeqGetRawMidi(snd_seq_t *seqHandle,void *buffer, size_t size) {
-//
-//   snd_seq_event_t* ev;
-//   static snd_midi_event_t * midiParser = NULL;
-//   int bytes_read = 0;
-//   int err;
-//
-//   // Start the MIDI parser
-//   if (midiParser == NULL ) {
-//    if (snd_midi_event_new(MIDI_DECODER_SIZE, &midiParser ) < 0) return -1;
-//    snd_midi_event_init(midiParser);
-//    snd_midi_event_no_status(midiParser,1); // No running status
-//   }
-//
-//   if ( size > MIDI_DECODER_SIZE ) {
-//     snd_midi_event_free (midiParser);
-//     snd_midi_event_new (size, &midiParser);
-//   }
-//
-//   do
-//   {
-//     if ( snd_seq_event_input(seqHandle, &ev) > 0 ) {
-//
-//       if (ev->type == SND_SEQ_EVENT_SYSEX) {
-//             err = ev->data.ext.len;
-//       			memcpy(buffer,ev->data.ext.ptr,err);
-//       }
-//       else {
-//         err = snd_midi_event_decode (midiParser, buffer, size, ev);
-//       }
-//
-//
-//   	  if (err > 0) {
-//   	      buffer += err;
-//           size -= err;
-//   	      bytes_read += err;
-//   	  }
-//   	  else ; // error or buffer full -> drop midi event
-//   	}
-//
-//     //snd_seq_free_event( ev );  DEPRECATED
-//    } while (snd_seq_event_input_pending(seqHandle, 0) > 0);
-//
-//
-// return bytes_read;
-//
-// }
-
-
 ///////////////////////////////////////////////////////////////////////////////
 // LaunchPad 3
 ///////////////////////////////////////////////////////////////////////////////
@@ -1005,6 +955,17 @@ void ControllerScrollText(TkRouter_t *rp,const char *message,uint8_t loop, uint8
 
   SeqSendRawMidi(rp->seq, rp->portCtrl,  buffer, pbuff - buffer );
 
+}
+
+void ControllerSetPadColorRGB(TkRouter_t *rp,uint8_t padCt, uint8_t r, uint8_t g, uint8_t b) {
+
+  // 0xF0, 0x00, 0x20, 0x29, 0x02, 0x0D, 0x03, 0x03 (Led Index) ( r) (g)  (b)
+  SX_LPMK3_LED_RGB_COLOR[8]  = padCt;
+  SX_LPMK3_LED_RGB_COLOR[9]  = r ;
+  SX_LPMK3_LED_RGB_COLOR[10] = g ;
+  SX_LPMK3_LED_RGB_COLOR[11] = b ;
+
+  SeqSendRawMidi(rp->seq, rp->portCtrl,SX_LPMK3_LED_RGB_COLOR,sizeof(SX_LPMK3_LED_RGB_COLOR));
 }
 
 int ControllerInitialize(TkRouter_t *rp) {
@@ -1039,22 +1000,19 @@ void threadMidiProcessAndRoute(TkRouter_t *rp) {
       int r = snd_seq_event_input(rp->seq, &ev) ;
       if (  r  <= 0 )  continue;
 
-      // Get a raw bytes buffer from event
+      // Get a raw bytes buffer from event (easier to manage)
       size =  SeqReadEventRawMidi(ev,buffer, sizeof(buffer)) ;
       if ( size <= 0 ) continue;
 
-
-            dump_event(ev);
-
       r = size ;
-
       snd_seq_ev_set_subs(ev);
       snd_seq_ev_set_direct(ev);
+      //dump_event(ev);
 
-      // Events from MPC application - Write Private / Write Public or midiloop
+      // -----------------------------------------------------------------------
+      // Events from MPC application - Write Private / Write Public
+      // -----------------------------------------------------------------------
       if ( ev->source.client == rp->Virt.cliPrivOut || ev->source.client == rp->Virt.cliPubOut ) {
-        //tklog_debug("Event received rawmidi virtual write private ...\n");
-
         switch (ev->type) {
           case SND_SEQ_EVENT_CONTROLLER:
             // Button Led
@@ -1068,8 +1026,7 @@ void threadMidiProcessAndRoute(TkRouter_t *rp) {
                 uint8_t *buff2 = buffer + sizeof(AkaiSysex);
                 buff2[0] = DeviceInfoBloc[MPC_OriginalId].sysexId;
                 buff2++;
-                // SET PAD COLORS SYSEX ------------------------------------------------
-                // FN  F0 47 7F [3B] -> 65 00 04 [Pad #] [R] [G] [B] F7
+                // Sysex : set pad color : FN  F0 47 7F [3B] -> 65 00 04 [Pad #] [R] [G] [B] F7
                 if ( memcmp(buff2,MPCSysexPadColorFn,sizeof(MPCSysexPadColorFn)) == 0 ) {
                     buff2 += sizeof(MPCSysexPadColorFn) ;
                     AllMpc_MapSxPadColorToDevice(rp, buff2,size, sizeof(buffer) - (buff2 - buffer) );
@@ -1078,18 +1035,21 @@ void threadMidiProcessAndRoute(TkRouter_t *rp) {
             }
             break;
         }
-        // Route to hw write port
+        // Route to the right hw write port
         if ( r > 0 ) {
           int destPort = -1;
           if ( ev->source.client == rp->Virt.cliPrivOut  ) destPort = rp->portMpcPriv ;
           else if  ( ev->source.client == rp->Virt.cliPubOut ) destPort = rp->portMpcPub ;
           if ( destPort >= 0 ) SeqSendRawMidi(rp->seq, destPort,  buffer, r );
         }
-
       }
 
-      // Response from MPC device
-      else if ( ev->source.client == rp->Mpc.cli ) {
+      // -----------------------------------------------------------------------
+      // Event from MPC hw device
+      // -----------------------------------------------------------------------
+
+      else
+      if ( ev->source.client == rp->Mpc.cli ) {
         if ( ev->source.port == rp->Mpc.portPriv ) {
           switch (ev->type) {
             case SND_SEQ_EVENT_SYSEX:
@@ -1117,7 +1077,6 @@ void threadMidiProcessAndRoute(TkRouter_t *rp) {
               // Buttons on channel 0
               if ( ev->data.control.channel == 0 && ev->type != SND_SEQ_EVENT_CHANPRESS) {
                 r = AllMpc_MapButtonFromDevice( rp, buffer,size,sizeof(buffer) );
-
               }
               else
               // Mpc Pads on channel 9
@@ -1126,28 +1085,23 @@ void threadMidiProcessAndRoute(TkRouter_t *rp) {
               }
               break;
           }
-
-          if ( r > 0 ) {
-//            tklog_debug("Sending to portPriv : \n");
-//            ShowBufferHexDump(buffer,r,16);
-            SeqSendRawMidi(rp->seq, rp->portPriv,  buffer, r );
-          }
+          if ( r > 0 ) SeqSendRawMidi(rp->seq, rp->portPriv,  buffer, r );
         }
       }
+
+      // -----------------------------------------------------------------------
       // Events from external controller
-      else if ( ev->source.client == rp->Ctrl.cli && ev->source.port == rp->Ctrl.port) {
+      // -----------------------------------------------------------------------
+      else
+      if ( ev->source.client == rp->Ctrl.cli && ev->source.port == rp->Ctrl.port) {
         tklog_info("Event received from external controller...\n");
       }
-
-      //dump_event(ev);
 
   } while (snd_seq_event_input_pending(rp->seq, 0) > 0);
 
   // Take care of our eventual special options pad lines
   if (   padsColorUpdated  && !ShiftHoldedMode && MPC_ForceColumnMode >= 0   )
-    //  AllMpc_MapSxPadColorToDevice( NULL,NULL,0,0) ;
-    //Mpc_DrawPadLineFromForceCache(rp, 8, MPC_PadOffsetC, 3)
-;
+      AllMpc_MapSxPadColorToDevice( rp ,NULL,0,0) ; // Refresh options command
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -1339,28 +1293,6 @@ static void tkgl_init()
   TkRouter.portMpcPub  = CreateSimpleRouterPort(TkRouter.seq, "Mpc Pub" );
   tklog_info("Midi Router created as client %d.\n",TkRouter.cli);
 
-  // Make connections of our virtuals ports
-  // MPC APP <---> VIRTUAL PORTS <---> MPC CONTROLLER PRIVATE & PUBLIC PORTS
-
-	// Private MPC controller port private  out to rawmidi virtual In priv
-	// if ( aconnect(	TkRouter.Mpc.cli,TkRouter.Mpc.portPriv , TkRouter.Virt.cliPrivIn, 0 ) < 0 ) {
-  //   tklog_fatal("Alsa error while connecting MPC private port to virtual rawmidi private in.\n");
-  //   exit(1);
-  // }
-  //
-	// // Virtual rawmidi out priv to Private MPC controller private port
-	// if ( aconnect(	TkRouter.Virt.cliPrivOut, 0, TkRouter.Mpc.cli,TkRouter.Mpc.portPriv) < 0 ) {
-  //   tklog_fatal("Alsa error while connecting virtual rawmidi private out to MPC Client private port.\n");
-  //   exit(1);
-  // }
-  //
-	// // Virtual rawmidi out pub to Public MPC controller
-  // // No need to cable the out...
-  // if ( aconnect(	TkRouter.Virt.cliPubOut,0, TkRouter.Mpc.cli,TkRouter.Mpc.portPub) < 0 ) {
-  //   tklog_fatal("Alsa error while connecting virtual rawmidi public out to MPC Client public port.\n");
-  //   exit(1);
-  // }
-
   // Router ports
   if ( aconnect(	TkRouter.Virt.cliPrivOut,0 , TkRouter.cli,TkRouter.portPriv) < 0 ) {
    tklog_fatal("Alsa error while connecting private virtual rawmidi to router.\n");
@@ -1416,18 +1348,6 @@ static void tkgl_init()
     tklog_fatal("Unable to create midi router thread\n");
     exit(1);
   }
-
-  // // Create a user virtual port if asked on the command line
-  // if ( user_virtual_portname != NULL) {
-  //
-  //   sprintf(portname,"[virtual]%s",user_virtual_portname);
-  //   if ( snd_rawmidi_open(&rawvirt_user_in, &rawvirt_user_out,  portname, 0 ) < 0 ) {
-  //     tklog_fatal("Unable to create virtual user port %s\n",user_virtual_portname);
-  //     exit(1);
-  //   }
-  //   tklog_info("Virtual user port %s succesfully created.\n",user_virtual_portname);
-  //   //snd_rawmidi_open(&read_handle, &write_handle, "virtual", 0);
-  // }
 
   fflush(stdout);
 }
@@ -1702,7 +1622,6 @@ static void Mpc_ResfreshPadsColorFromForceCache(TkRouter_t *rp, uint8_t padL, ui
       sysexBuff[8] = Force_PadColorsCache[padF].r ;
       sysexBuff[9] = Force_PadColorsCache[padF].g;
       sysexBuff[10] = Force_PadColorsCache[padF].b;
-//      snd_rawmidi_write(rawvirt_outpriv,sysexBuff,sizeof(sysexBuff));
       SeqSendRawMidi(rp->seq, rp->portMpcPriv,  sysexBuff, sizeof(sysexBuff) );
       tklog_debug("Mpc_ResfreshPadsColorFromForceCache...\n");
 
