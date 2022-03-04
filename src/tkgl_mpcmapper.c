@@ -68,11 +68,12 @@ your own midi mapping to input and output midi messages.
 static void ShowBufferHexDump(const uint8_t* data, ssize_t sz, uint8_t nl);
 static ssize_t AllMpcProcessRead( uint8_t *buffer, size_t maxSize, ssize_t size, bool isSysex );
 
-int AllMpc_MapPadFromDevice(uint8_t * buffer, ssize_t size, size_t maxSize) ;
-int AllMpc_MapButtonFromDevice( uint8_t * buffer, ssize_t size , size_t maxSize);
-int AllMpc_MapEncoderFromDevice( uint8_t * buffer, ssize_t size, size_t maxSize );
-int AllMpc_MapLedFromDevice( uint8_t * buffer, ssize_t size, size_t maxSize );
-
+int AllMpc_MapPadFromDevice(TkRouter_t *rp,uint8_t * buffer, ssize_t size, size_t maxSize) ;
+int AllMpc_MapButtonFromDevice( TkRouter_t *rp, uint8_t * buffer, ssize_t size , size_t maxSize);
+int AllMpc_MapEncoderFromDevice( TkRouter_t *rp, uint8_t * buffer, ssize_t size, size_t maxSize );
+int AllMpc_MapLedToDevice( TkRouter_t *rp, uint8_t * buffer, ssize_t size, size_t maxSize );
+int AllMpc_MapSxPadColorToDevice( TkRouter_t *rp, uint8_t * buffer, ssize_t size, size_t maxSize );
+void Mpc_DrawPadLineFromForceCache(TkRouter_t *rp, uint8_t forcePadL, uint8_t forcePadC, uint8_t mpcPadL) ;
 // Globals ---------------------------------------------------------------------
 
 // Ports and clients used by mpcmapper and router thread
@@ -438,15 +439,6 @@ static void LoadMappingFromConfFile(const char * confFileName) {
     }
 
   } // for
-}
-
-///////////////////////////////////////////////////////////////////////////////
-// Prepare a fake midi message in the Private midi context
-///////////////////////////////////////////////////////////////////////////////
-void PrepareFakeMidiMsg(uint8_t buf[]) {
-  buf[0]  = 0x00 ;
-  buf[1]  = 0x00 ;
-  buf[2]  = 0x00 ;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -853,9 +845,14 @@ static void dump_event(const snd_seq_event_t *ev)
 ///////////////////////////////////////////////////////////////////////////////
 // Alsa SEQ raw write to a seq port
 ///////////////////////////////////////////////////////////////////////////////
-int SeqSendRawMidi(snd_seq_t *seqHandle, uint8_t port,  const uint8_t *message, size_t size )
-{
+// (rawmidi_virt.c snd_rawmidi_virtual_write inspiration !)
+int SeqSendRawMidi(snd_seq_t *seqHandle, uint8_t port,  const uint8_t *buffer, size_t size ) {
+
   static snd_midi_event_t * midiParser = NULL;
+  snd_seq_event_t ev;
+	ssize_t result = 0;
+	ssize_t size1;
+	int err;
 
   // Start the MIDI parser
   if (midiParser == NULL ) {
@@ -869,21 +866,32 @@ int SeqSendRawMidi(snd_seq_t *seqHandle, uint8_t port,  const uint8_t *message, 
     snd_midi_event_new (size, &midiParser);
   }
 
-  snd_seq_event_t ev;
   snd_seq_ev_clear (&ev);
 
-  snd_midi_event_encode (midiParser, message, size, &ev);
-  snd_midi_event_reset_encode (midiParser);
+	while (size > 0) {
+		size1 = snd_midi_event_encode (midiParser, buffer, size, &ev);
+    snd_midi_event_reset_encode (midiParser);
 
-  snd_seq_ev_set_source(&ev, port);
+		if (size1 <= 0) break;
+		size -= size1;
+		result += size1;
+		buffer += size1;
+		if (ev.type == SND_SEQ_EVENT_NONE) continue;
 
-  snd_seq_ev_set_subs (&ev);
-  snd_seq_ev_set_direct (&ev);
+    snd_seq_ev_set_subs (&ev);
+    snd_seq_ev_set_source(&ev, port);
+		snd_seq_ev_set_direct (&ev);
+		err = snd_seq_event_output (seqHandle, &ev);
 
-  snd_seq_event_output (seqHandle, &ev);
+		if (err < 0) {
+			return result > 0 ? result : err;
+		}
+	}
 
+	if (result > 0)
   snd_seq_drain_output (seqHandle);
-  return 0;
+
+	return result;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -1025,6 +1033,8 @@ void threadMidiProcessAndRoute(TkRouter_t *rp) {
   uint8_t buffer[MIDI_DECODER_SIZE] ;
   ssize_t size = 0;
 
+  bool padsColorUpdated = false;
+
   do {
       int r = snd_seq_event_input(rp->seq, &ev) ;
       if (  r  <= 0 )  continue;
@@ -1033,26 +1043,49 @@ void threadMidiProcessAndRoute(TkRouter_t *rp) {
       size =  SeqReadEventRawMidi(ev,buffer, sizeof(buffer)) ;
       if ( size <= 0 ) continue;
 
+
+            dump_event(ev);
+
+      r = size ;
+
       snd_seq_ev_set_subs(ev);
       snd_seq_ev_set_direct(ev);
 
-      // Events from MPC application - Write Private
-      if ( ev->source.client == rp->Virt.cliPrivOut ) {
-        //tklog_info("Event received rawmidi virtual write private ...\n");
-        // Route to Mpc hw port public
-        snd_seq_ev_set_source(ev, rp->portMpcPriv);
-        snd_seq_event_output_direct(rp->seq, ev);
-                      // AllMpc_MapLedFromDevice( buffer,size,sizeof(buffer) );
-      }
+      // Events from MPC application - Write Private / Write Public or midiloop
+      if ( ev->source.client == rp->Virt.cliPrivOut || ev->source.client == rp->Virt.cliPubOut ) {
+        //tklog_debug("Event received rawmidi virtual write private ...\n");
 
-      // Events from MPC application - Write Public
-      else if ( ev->source.client == rp->Virt.cliPubOut ) {
-        tklog_info("Event received rawmidi virtual write public ...\n");
-        ShowBufferHexDump(buffer,size,16);
-        // Route to Mpc hw port public
-        snd_seq_ev_set_source(ev, rp->portMpcPub);
-        //snd_seq_ev_set_dest(ev, rp->Mpc.cli,rp->Mpc.portPub);
-        snd_seq_event_output_direct(rp->seq, ev);
+        switch (ev->type) {
+          case SND_SEQ_EVENT_CONTROLLER:
+            // Button Led
+            if ( ev->data.control.channel == 0 ) {
+              r = AllMpc_MapLedToDevice( rp, buffer,size,sizeof(buffer) );
+            }
+            break;
+          case SND_SEQ_EVENT_SYSEX:
+            // Akai hardware sysex (only the first event)
+            if (  buffer[0] == 0xF0 &&  memcmp(buffer,AkaiSysex,sizeof(AkaiSysex)) == 0 ) {
+                uint8_t *buff2 = buffer + sizeof(AkaiSysex);
+                buff2[0] = DeviceInfoBloc[MPC_OriginalId].sysexId;
+                buff2++;
+                // SET PAD COLORS SYSEX ------------------------------------------------
+                // FN  F0 47 7F [3B] -> 65 00 04 [Pad #] [R] [G] [B] F7
+                if ( memcmp(buff2,MPCSysexPadColorFn,sizeof(MPCSysexPadColorFn)) == 0 ) {
+                    buff2 += sizeof(MPCSysexPadColorFn) ;
+                    AllMpc_MapSxPadColorToDevice(rp, buff2,size, sizeof(buffer) - (buff2 - buffer) );
+                    padsColorUpdated = true;
+                }
+            }
+            break;
+        }
+        // Route to hw write port
+        if ( r > 0 ) {
+          int destPort = -1;
+          if ( ev->source.client == rp->Virt.cliPrivOut  ) destPort = rp->portMpcPriv ;
+          else if  ( ev->source.client == rp->Virt.cliPubOut ) destPort = rp->portMpcPub ;
+          if ( destPort >= 0 ) SeqSendRawMidi(rp->seq, destPort,  buffer, r );
+        }
+
       }
 
       // Response from MPC device
@@ -1063,7 +1096,6 @@ void threadMidiProcessAndRoute(TkRouter_t *rp) {
               // substitue sysex identity request by the faked one only on the first packet
               if (  buffer[0] == 0xF0 &&  memcmp(buffer,IdentityReplySysexHeader,sizeof(IdentityReplySysexHeader)) == 0 ) {
                 memcpy(buffer + sizeof(IdentityReplySysexHeader),DeviceInfoBloc[MPC_Id].sysexIdReply, sizeof(DeviceInfoBloc[MPC_Id].sysexIdReply) );
-                r = size;
               }
               break;
 
@@ -1072,10 +1104,10 @@ void threadMidiProcessAndRoute(TkRouter_t *rp) {
               // B0 [10-31] [7F - n] : Qlinks    B0 64 nn : Main encoder
               if ( ev->data.control.channel == 0 ) {
                 if (  buffer[1] == 0x64 ) {
-                  r = size ;// Nothing now
+                  ;// Nothing now
                 }
                 else if ( ( buffer[1] >= 0x10 && buffer[1] <= 0x31 ) ) { //
-                  r = AllMpc_MapEncoderFromDevice( buffer,size,sizeof(buffer) );
+                  r = AllMpc_MapEncoderFromDevice( rp, buffer,size,sizeof(buffer) );
                 }
               }
               break;
@@ -1084,33 +1116,38 @@ void threadMidiProcessAndRoute(TkRouter_t *rp) {
             case SND_SEQ_EVENT_CHANPRESS:
               // Buttons on channel 0
               if ( ev->data.control.channel == 0 && ev->type != SND_SEQ_EVENT_CHANPRESS) {
-                r = AllMpc_MapButtonFromDevice( buffer,size,sizeof(buffer) );
-              }
+                r = AllMpc_MapButtonFromDevice( rp, buffer,size,sizeof(buffer) );
 
+              }
+              else
               // Mpc Pads on channel 9
-              else if ( ev->data.control.channel == 9 ) {
-                r = AllMpc_MapPadFromDevice( buffer, size, sizeof(buffer) );
+              if ( ev->data.control.channel == 9 ) {
+                r = AllMpc_MapPadFromDevice( rp, buffer, size, sizeof(buffer) );
               }
               break;
           }
 
-          if ( r > 0 ) SeqSendRawMidi(rp->seq, rp->portPriv,  buffer, r );
-
-          tklog_info("After SIZE : %d\n",r);
-          ShowBufferHexDump(buffer,r,16);
+          if ( r > 0 ) {
+//            tklog_debug("Sending to portPriv : \n");
+//            ShowBufferHexDump(buffer,r,16);
+            SeqSendRawMidi(rp->seq, rp->portPriv,  buffer, r );
+          }
         }
       }
       // Events from external controller
       else if ( ev->source.client == rp->Ctrl.cli && ev->source.port == rp->Ctrl.port) {
         tklog_info("Event received from external controller...\n");
-        //SeqRawMidiWrite(rp->seq, rp->Mpc.cli, rp->mpcPublicPort, buff,size );
       }
 
       //dump_event(ev);
-      //tklog_info("\n\n");
-      // snd_seq_free_event(ev); DEPRECATED
 
   } while (snd_seq_event_input_pending(rp->seq, 0) > 0);
+
+  // Take care of our eventual special options pad lines
+  if (   padsColorUpdated  && !ShiftHoldedMode && MPC_ForceColumnMode >= 0   )
+    //  AllMpc_MapSxPadColorToDevice( NULL,NULL,0,0) ;
+    //Mpc_DrawPadLineFromForceCache(rp, 8, MPC_PadOffsetC, 3)
+;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -1622,29 +1659,52 @@ int snd_rawmidi_close	(	snd_rawmidi_t * 	rawmidi	)
 	return orig_snd_rawmidi_close(rawmidi);
 }
 
+
+///////////////////////////////////////////////////////////////////////////////
+// Get MPC pad # from Force pad relatively to the current quadran
+///////////////////////////////////////////////////////////////////////////////
+static int Mpc_GetPadIndexFromForcePadIndex(uint8_t padF) {
+
+  uint8_t padL = padF / 8 ;
+  uint8_t padC = padF % 8 ;
+  uint8_t padM = 0x7F ;
+
+  if ( MPC_OriginalId == MPC_FORCE ) return padM; // Only for Mpcs
+
+  // Transpose Force pad to Mpc pad in the 4x4 current quadran
+  if ( padL >= MPC_PadOffsetL && padL < MPC_PadOffsetL + 4 ) {
+    if ( padC >= MPC_PadOffsetC  && padC < MPC_PadOffsetC + 4 ) {
+      padM = (  3 - ( padL - MPC_PadOffsetL  ) ) * 4 + ( padC - MPC_PadOffsetC)  ;
+    }
+  }
+
+  return padM;
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 // Refresh MPC pads colors from Force PAD Colors cache
 ///////////////////////////////////////////////////////////////////////////////
-static void Mpc_ResfreshPadsColorFromForceCache(uint8_t padL, uint8_t padC, uint8_t nbLine) {
+static void Mpc_ResfreshPadsColorFromForceCache(TkRouter_t *rp, uint8_t padL, uint8_t padC, uint8_t nbLine) {
 
-  // Write again the color like a Force.
-  // The midi modification will be done within the corpse of the hooked fn.
-  // Pads from 64 are columns pads
+  if ( MPC_OriginalId == MPC_FORCE ) return; // Only for Mpcs
 
-  uint8_t sysexBuff[12] = { 0xF0, 0x47, 0x7F, 0x40, 0x65, 0x00, 0x04, 0x00, 0x00, 0x00, 0x00, 0xF7};
+  uint8_t sysexBuff[12] = { 0xF0, 0x47, 0x7F, 0x3B, 0x65, 0x00, 0x04, 0x00, 0x00, 0x00, 0x00, 0xF7};
   //                                                                 [Pad #] [R]   [G]   [B]
+
+  sysexBuff[3] = DeviceInfoBloc[MPC_OriginalId].sysexId;
 
   for ( int l = 0 ; l< nbLine ; l++ ) {
 
     for ( int c = 0 ; c < 4 ; c++ ) {
 
       int padF = ( l + padL ) * 8 + c + padC;
-      sysexBuff[7] = padF;
+      sysexBuff[7] = Mpc_GetPadIndexFromForcePadIndex(padF) ;
       sysexBuff[8] = Force_PadColorsCache[padF].r ;
       sysexBuff[9] = Force_PadColorsCache[padF].g;
       sysexBuff[10] = Force_PadColorsCache[padF].b;
-      // Send the sysex to the MPC controller
-      snd_rawmidi_write(rawvirt_outpriv,sysexBuff,sizeof(sysexBuff));
+//      snd_rawmidi_write(rawvirt_outpriv,sysexBuff,sizeof(sysexBuff));
+      SeqSendRawMidi(rp->seq, rp->portMpcPriv,  sysexBuff, sizeof(sysexBuff) );
+      tklog_debug("Mpc_ResfreshPadsColorFromForceCache...\n");
 
     }
 
@@ -1655,7 +1715,7 @@ static void Mpc_ResfreshPadsColorFromForceCache(uint8_t padL, uint8_t padC, uint
 ///////////////////////////////////////////////////////////////////////////////
 // Show the current MPC quadran within the Force matrix
 ///////////////////////////////////////////////////////////////////////////////
-static void Mpc_ShowForceMatrixQuadran(uint8_t forcePadL, uint8_t forcePadC) {
+static void Mpc_ShowForceMatrixQuadran(TkRouter_t *rp, uint8_t forcePadL, uint8_t forcePadC) {
 
   uint8_t sysexBuff[12] = { 0xF0, 0x47, 0x7F, 0x40, 0x65, 0x00, 0x04, 0x00, 0x00, 0x00, 0x00, 0xF7};
   //                                                                 [Pad #] [R]   [G]   [B]
@@ -1678,7 +1738,9 @@ static void Mpc_ShowForceMatrixQuadran(uint8_t forcePadL, uint8_t forcePadC) {
       }
       //tklog_debug("[tkgl] MPC Pad quadran : l,c %d,%d Pad %d r g b %02X %02X %02X\n",forcePadL,forcePadC,sysexBuff[7],sysexBuff[8],sysexBuff[9],sysexBuff[10]);
 
-      orig_snd_rawmidi_write(rawvirt_outpriv,sysexBuff,sizeof(sysexBuff));
+      //orig_snd_rawmidi_write(rawvirt_outpriv,sysexBuff,sizeof(sysexBuff));
+      // Direct send to hw private port
+      SeqSendRawMidi(rp->seq, rp->portMpcPriv,  sysexBuff, sizeof(sysexBuff) );
     }
   }
 }
@@ -1686,279 +1748,109 @@ static void Mpc_ShowForceMatrixQuadran(uint8_t forcePadL, uint8_t forcePadC) {
 ///////////////////////////////////////////////////////////////////////////////
 // Draw a pad line on MPC pads from a Force PAD line in the current Colors cache
 ///////////////////////////////////////////////////////////////////////////////
-void Mpc_DrawPadLineFromForceCache(uint8_t forcePadL, uint8_t forcePadC, uint8_t mpcPadL) {
+void Mpc_DrawPadLineFromForceCache(TkRouter_t *rp, uint8_t forcePadL, uint8_t forcePadC, uint8_t mpcPadL) {
 
-  uint8_t sysexBuff[12] = { 0xF0, 0x47, 0x7F, 0x40, 0x65, 0x00, 0x04, 0x00, 0x00, 0x00, 0x00, 0xF7};
-  //                                                                 [Pad #] [R]   [G]   [B]
-  sysexBuff[3] = DeviceInfoBloc[MPC_OriginalId].sysexId;
-
-  uint8_t p = forcePadL*8 + forcePadC ;
+  uint8_t const sysexBuff[12] = { 0xF0, 0x47, 0x7F, 0x40, 0x65, 0x00, 0x04, 0x00, 0x00, 0x00, 0x00, 0xF7};
+  //                                                                       [Pad #] [R]   [G]   [B]
+  // A line of 4 pads
+  uint8_t buffer[4 * sizeof(sysexBuff)];
+  uint8_t * buff2 = buffer;
 
   for ( int c = 0 ; c < 4 ; c++ ) {
-    sysexBuff[7] = mpcPadL * 4 + c ;
-    p = forcePadL*8 + c + forcePadC  ;
-    sysexBuff[8]  = Force_PadColorsCache[p].r ;
-    sysexBuff[9]  = Force_PadColorsCache[p].g;
-    sysexBuff[10] = Force_PadColorsCache[p].b;
-
+    memcpy(buff2, sysexBuff, sizeof(sysexBuff) );
+    buff2[3] = DeviceInfoBloc[MPC_OriginalId].sysexId;
+    buff2[7] = mpcPadL * 4 + c ;
+    uint8_t p = forcePadL*8 + c + forcePadC  ;
+    buff2[8]  = Force_PadColorsCache[p].r ;
+    buff2[9]  = Force_PadColorsCache[p].g;
+    buff2[10] = Force_PadColorsCache[p].b;
+    buff2 += sizeof(sysexBuff);
     //tklog_debug("[tkgl] MPC Pad Line refresh : %d r g b %02X %02X %02X\n",sysexBuff[7],sysexBuff[8],sysexBuff[9],sysexBuff[10]);
 
-    orig_snd_rawmidi_write(rawvirt_outpriv,sysexBuff,sizeof(sysexBuff));
-  }
-}
-
-
-///////////////////////////////////////////////////////////////////////////////
-// MIDI WRITE - APP ON MPC MAPPING TO MPC
-///////////////////////////////////////////////////////////////////////////////
-static void Mpc_MapAppWriteToMpc(const void *midiBuffer, size_t size) {
-
-  uint8_t * myBuff = (uint8_t*)midiBuffer;
-
-  size_t i = 0 ;
-  while  ( i < size ) {
-
-    // AKAI SYSEX
-    // If we detect the Akai sysex header, change the harwware id by our true hardware id.
-    // Messages are compatibles. Some midi msg are not always interpreted (e.g. Oled)
-    if (  myBuff[i] == 0xF0 &&  memcmp(&myBuff[i],AkaiSysex,sizeof(AkaiSysex)) == 0 ) {
-        // Update the sysex id in the sysex for our original hardware
-        i += sizeof(AkaiSysex) ;
-        myBuff[i] = DeviceInfoBloc[MPC_OriginalId].sysexId; // MPC are several...
-        i++;
-
-          // SET PAD COLORS SYSEX FN
-          // F0 47 7F [3B] -> 65 00 04 [Pad #] [R] [G] [B] F7
-        if ( memcmp(&myBuff[i],MPCSysexPadColorFn,sizeof(MPCSysexPadColorFn)) == 0 ) {
-              i += sizeof(MPCSysexPadColorFn) ;
-
-              uint8_t padF = myBuff[i];
-              // Update Force pad color cache
-              Force_PadColorsCache[padF].r = myBuff[i + 1 ];
-              Force_PadColorsCache[padF].g = myBuff[i + 2 ];
-              Force_PadColorsCache[padF].b = myBuff[i + 3 ];
-
-              i += 5 ; // Next msg
-        }
-    }
-    // Buttons-Leds.  In that direction, it's a LED ON / OFF for the button
-    // Check if we must remap...
-    else
-    if (  myBuff[i] == 0xB0  ) {
-
-      if ( map_ButtonsLeds_Inv[ myBuff[i+1] ] >= 0 ) {
-        //tklog_debug("MAP INV %d->%d\n",myBuff[i+1],map_ButtonsLeds_Inv[ myBuff[i+1] ]);
-        myBuff[i+1] = map_ButtonsLeds_Inv[ myBuff[i+1] ];
-      }
-      i += 3;
-    }
-    else i++;
-  }
-}
-
-///////////////////////////////////////////////////////////////////////////////
-// MIDI WRITE - APP ON MPC MAPPING TO FORCE
-///////////////////////////////////////////////////////////////////////////////
-static void Mpc_MapAppWriteToForce(const void *midiBuffer, size_t size) {
-
-  uint8_t * myBuff = (uint8_t*)midiBuffer;
-
-  bool refreshMutePadLine = false;
-  bool refreshOptionPadLines = false;
-
-  size_t i = 0 ;
-  while  ( i < size ) {
-
-    // AKAI SYSEX
-    // If we detect the Akai sysex header, change the harwware id by our true hardware id.
-    // Messages are compatibles. Some midi msg are not always interpreted (e.g. Oled)
-    if (  myBuff[i] == 0xF0 &&  memcmp(&myBuff[i],AkaiSysex,sizeof(AkaiSysex)) == 0 ) {
-        // Update the sysex id in the sysex for our original hardware
-        i += sizeof(AkaiSysex) ;
-        myBuff[i] = DeviceInfoBloc[MPC_OriginalId].sysexId;
-        i++;
-
-        // SET PAD COLORS SYSEX ------------------------------------------------
-        // FN  F0 47 7F [3B] -> 65 00 04 [Pad #] [R] [G] [B] F7
-        if ( memcmp(&myBuff[i],MPCSysexPadColorFn,sizeof(MPCSysexPadColorFn)) == 0 ) {
-            i += sizeof(MPCSysexPadColorFn) ;
-
-            uint8_t padF = myBuff[i];
-            uint8_t padL = padF / 8 ;
-            uint8_t padC = padF % 8 ;
-            uint8_t padM = 0x7F ;
-
-            // Update Force pad color cache
-            Force_PadColorsCache[padF].r = myBuff[i + 1 ];
-            Force_PadColorsCache[padF].g = myBuff[i + 2 ];
-            Force_PadColorsCache[padF].b = myBuff[i + 3 ];
-
-            //tklog_debug("Setcolor for Force pad %d (%d,%d)  %02x%02x%02x\n",padF,padL,padC,myBuff[i + 1 ],myBuff[i + 2 ],myBuff[i + 3 ]);
-
-            // Transpose Force pad to Mpc pad in the 4x4 current quadran
-            if ( padL >= MPC_PadOffsetL && padL < MPC_PadOffsetL + 4 ) {
-              if ( padC >= MPC_PadOffsetC  && padC < MPC_PadOffsetC + 4 ) {
-                padM = (  3 - ( padL - MPC_PadOffsetL  ) ) * 4 + ( padC - MPC_PadOffsetC)  ;
-              }
-            }
-
-            // Take care of the pad mutes mode line 0 on the MPC, line 8 on Force
-            // Shift must not be pressed else it shows the sub option of lines 8/9
-            // and not the state of solo/mut/rec arm etc...
-            if ( padL == 8 && !ShiftHoldedMode && MPC_ForceColumnMode >= 0   ) refreshMutePadLine = true;
-            else if ( ( padL == 8 || padL == 9 ) && ShiftHoldedMode && MPC_ForceColumnMode < 0   ) refreshOptionPadLines = true;
-
-            //tklog_debug("Mpc pad transposed : %d \n",padM);
-
-            // Update the pad# in the midi buffer
-            myBuff[i] = padM;
-
-            i += 5 ; // Next msg
-        }
-
-    }
-
-    // Buttons-Leds.  In that direction, it's a LED ON / OFF for the button
-    // Check if we must remap...
-
-    else
-    if (  myBuff[i] == 0xB0  ) {
-      if ( map_ButtonsLeds_Inv[ myBuff[i+1] ] >= 0 ) {
-        //tklog_debug("MAP INV %d->%d\n",myBuff[i+1],map_ButtonsLeds_Inv[ myBuff[i+1] ]);
-        myBuff[i+1] = map_ButtonsLeds_Inv[ myBuff[i+1] ];
-      }
-      i += 3;
-    }
-
-    else i++;
   }
 
-  // Check if mute pad line changed
-  if ( refreshMutePadLine ) Mpc_DrawPadLineFromForceCache(8, MPC_PadOffsetC, 3);
-  else if ( refreshOptionPadLines ) {
-
-    // Mpc_DrawPadLineFromForceCache(9, 0, 3);
-    // Mpc_DrawPadLineFromForceCache(9, 4, 3);
-    // Mpc_DrawPadLineFromForceCache(8, 0, 2);
-    // Mpc_DrawPadLineFromForceCache(8, 4, 2);
-
-  }
-
-}
-
-//////////////////////////////////////////////////////////////////////////////
-// MIDI WRITE - APP ON FORCE MAPPING TO MPC
-///////////////////////////////////////////////////////////////////////////////
-static void Force_MapAppWriteToMpc(const void *midiBuffer, size_t size) {
-
-  uint8_t * myBuff = (uint8_t*)midiBuffer;
-
-  size_t i = 0 ;
-  while  ( i < size ) {
-
-    // AKAI SYSEX
-    // If we detect the Akai sysex header, change the harwware id by our true hardware id.
-    // Messages are compatibles. Some midi msg are not always interpreted (e.g. Oled)
-    if (  myBuff[i] == 0xF0 &&  memcmp(&myBuff[i],AkaiSysex,sizeof(AkaiSysex)) == 0 ) {
-        // Update the sysex id in the sysex for our original hardware
-        i += sizeof(AkaiSysex) ;
-        myBuff[i] = DeviceInfoBloc[MPC_OriginalId].sysexId;
-        i++;
-
-        // PAD SET COLOR SYSEX - MPC spoofed on a Force
-        // F0 47 7F [3B] -> 65 00 04 [Pad #] [R] [G] [B] F7
-        if ( memcmp(&myBuff[i],MPCSysexPadColorFn,sizeof(MPCSysexPadColorFn)) == 0 ) {
-          i += sizeof(MPCSysexPadColorFn) ;
-
-          // Translate pad number
-          uint8_t padM = myBuff[i];
-          uint8_t padL = padM / 4 ;
-          uint8_t padC = padM % 4 ;
-
-          // Place the 4x4 in the 8x8 matrix
-          padL += 0 ;
-          padC += 2 ;
-
-          myBuff[i] = ( 7 - padL ) * 8 + padC;
-
-          i += 5 ; // Next msg
-        }
-    }
-
-    // Buttons-Leds.  In that direction, it's a LED ON / OFF for the button
-    else
-    if (  myBuff[i] == 0xB0  ) {
-      if ( map_ButtonsLeds_Inv[ myBuff[i+1] ] >= 0 ) {
-        myBuff[i+1] = map_ButtonsLeds_Inv[ myBuff[i+1] ];
-      }
-      else if ( configFileName != NULL ) {
-        // No mapping in the configuration file
-        // Erase bank button midi msg - Put a fake midi msg
-        PrepareFakeMidiMsg(&myBuff[i]);
-      }
-
-      i += 3; // Next midi msg
-    }
-
-    else i++;
-  }
-}
-
-///////////////////////////////////////////////////////////////////////////////
-// MIDI WRITE - APP ON FORCE MAPPING TO ITSELF
-///////////////////////////////////////////////////////////////////////////////
-static void Force_MapAppWriteToForce(const void *midiBuffer, size_t size) {
-
-  uint8_t * myBuff = (uint8_t*)midiBuffer;
-
-  size_t i = 0 ;
-  while  ( i < size ) {
-
-    // AKAI SYSEX
-    if (  myBuff[i] == 0xF0 &&  memcmp(&myBuff[i],AkaiSysex,sizeof(AkaiSysex)) == 0 ) {
-        // Update the sysex id in the sysex for our original hardware
-        i += sizeof(AkaiSysex) ;
-        //myBuff[i] = DeviceInfoBloc[MPC_OriginalId].sysexId;
-        i++;
-
-        // PAD COLOR SYSEX - Store color in the pad color cache
-        // SET PAD COLORS SYSEX FN
-        // F0 47 7F [3B] -> 65 00 04 [Pad #] [R] [G] [B] F7
-        if ( memcmp(&myBuff[i],MPCSysexPadColorFn,sizeof(MPCSysexPadColorFn)) == 0 ) {
-              i += sizeof(MPCSysexPadColorFn) ;
-
-              // Update Force pad color cache
-              uint8_t padF = myBuff[i];
-              Force_PadColorsCache[padF].r = myBuff[i + 1 ];
-              Force_PadColorsCache[padF].g = myBuff[i + 2 ];
-              Force_PadColorsCache[padF].b = myBuff[i + 3 ];
-
-              i += 5 ; // Next msg
-        }
-
-    }
-
-    // Buttons-Leds.  In that direction, it's a LED ON / OFF for the button
-    // Check if we must remap...
-    else
-    if (  myBuff[i] == 0xB0  ) {
-
-      if ( map_ButtonsLeds_Inv[ myBuff[i+1] ] >= 0 ) {
-        //tklog_debug("MAP INV %d->%d\n",myBuff[i+1],map_ButtonsLeds_Inv[ myBuff[i+1] ]);
-        myBuff[i+1] = map_ButtonsLeds_Inv[ myBuff[i+1] ];
-      }
-      i += 3;
-    }
-
-    else i++;
-  }
+  //orig_snd_rawmidi_write(rawvirt_outpriv,sysexBuff,sizeof(sysexBuff));
+  SeqSendRawMidi(rp->seq, rp->portMpcPriv,  buffer, sizeof(buffer) );
 
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-// PROCESS Encoder MIDI EVENT RECEIVED FROM MPC/FORCE  DEVICE
+// PROCESS SYSEX SET PAD COLOR SENT TO MPC/FORCE  DEVICE
 ///////////////////////////////////////////////////////////////////////////////
-int AllMpc_MapEncoderFromDevice( uint8_t * buffer, ssize_t size, size_t maxSize ) {
+// If all parameters are null, this will make a refresh options
+int AllMpc_MapSxPadColorToDevice( TkRouter_t *rp, uint8_t * buffer, ssize_t size, size_t maxSize ) {
+
+  int r = size ;
+
+  if ( ( MPC_OriginalId != MPC_FORCE && MPC_Id != MPC_FORCE )
+       || (  MPC_OriginalId == MPC_Id ) )
+  {
+    // Any MPC to any MPC or Force to Force : no spoofing at all
+    // Nothing to do
+   ;
+  }
+  else {
+    // Remap Force hardware pad to MPC Pads
+    if ( MPC_OriginalId == MPC_FORCE ) {
+
+      // Translate pad number
+
+      uint8_t padM = buffer[0];
+      uint8_t padL = padM / 4 ;
+      uint8_t padC = padM % 4 ;
+
+      // Place the 4x4 in the 8x8 matrix
+      padL += 0 ;
+      padC += 2 ;
+
+      buffer[0] = ( 7 - padL ) * 8 + padC;
+
+    }
+    else {
+      // Refresh command
+      if ( buffer == NULL && size == 0 && maxSize == 0 ) {
+        Mpc_DrawPadLineFromForceCache(rp, 8, MPC_PadOffsetC, 3);
+        return 0;
+      }
+
+      // Remap Mpc hardware pad to Force Pads
+      uint8_t padF = buffer[0];
+
+      // Update Force pad color cache
+      Force_PadColorsCache[padF].r = buffer[1];
+      Force_PadColorsCache[padF].g = buffer[2];
+      Force_PadColorsCache[padF].b = buffer[3];
+
+      buffer[0] = Mpc_GetPadIndexFromForcePadIndex(padF) ;
+
+    }
+  }
+
+  return r;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// PROCESS Leds MIDI EVENT SENT TO MPC/FORCE  DEVICE
+///////////////////////////////////////////////////////////////////////////////
+int AllMpc_MapLedToDevice( TkRouter_t *rp, uint8_t * buffer, ssize_t size, size_t maxSize ) {
+
+  // SHift is always accepted as unmappable
+  if ( buffer[1] == SHIFT_KEY_VALUE ) return size;
+
+  // Check if we must remap...
+  if ( map_ButtonsLeds_Inv[ buffer[1] ] >= 0 ) {
+      buffer[1] = map_ButtonsLeds_Inv[ buffer[1] ];
+  } else {
+    return 0; // No mapping found. Block event
+  }
+
+  return size;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// PROCESS Encoders Qlink MIDI EVENT RECEIVED FROM MPC/FORCE  DEVICE
+///////////////////////////////////////////////////////////////////////////////
+int AllMpc_MapEncoderFromDevice( TkRouter_t *rp, uint8_t * buffer, ssize_t size, size_t maxSize ) {
   int r = - 1 ;
 
   if ( ShiftHoldedMode && DeviceInfoBloc[MPC_OriginalId].qlinkKnobsCount < 16 ) {
@@ -1971,26 +1863,18 @@ int AllMpc_MapEncoderFromDevice( uint8_t * buffer, ssize_t size, size_t maxSize 
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-// PROCESS Encoder MIDI EVENT RECEIVED FROM MPC/FORCE  DEVICE
-///////////////////////////////////////////////////////////////////////////////
-int AllMpc_MapLedFromDevice( uint8_t * buffer, ssize_t size, size_t maxSize ) {
-  int r = - 1 ;
-
-
-}
-
-///////////////////////////////////////////////////////////////////////////////
 // PROCESS PADS MIDI EVENT RECEIVED FROM MPC/FORCE  DEVICE
 ///////////////////////////////////////////////////////////////////////////////
-int AllMpc_MapPadFromDevice(uint8_t * buffer, ssize_t size, size_t maxSize ) {
+int AllMpc_MapPadFromDevice(TkRouter_t *rp,uint8_t * buffer, ssize_t size, size_t maxSize ) {
 
-  int r = - 1 ;
+  int r = size ;
+
   if ( ( MPC_OriginalId != MPC_FORCE && MPC_Id != MPC_FORCE )
        || (  MPC_OriginalId == MPC_Id ) )
   {
     // Any MPC to any MPC or Force to Force : no spoofing at all
     // Nothing to do
-    r = size ;
+   ;
   }
   else {
     // Remap Force hardware pad to MPC Pads
@@ -2009,8 +1893,7 @@ int AllMpc_MapPadFromDevice(uint8_t * buffer, ssize_t size, size_t maxSize ) {
 
       }
       else {
-        // Fake event
-        PrepareFakeMidiMsg(buffer);
+        //  block event
         return 0;
       }
 
@@ -2026,8 +1909,7 @@ int AllMpc_MapPadFromDevice(uint8_t * buffer, ssize_t size, size_t maxSize ) {
       if (  ShiftHoldedMode || MPC_ForceColumnMode >= 0  ) {
         // Ignore aftertouch in special pad modes
         if ( buffer[0] == 0xA9 ) {
-            PrepareFakeMidiMsg(buffer);
-            return 0 ; // next msg
+            return 0 ; // block this one
         }
 
         uint8_t buttonValue = 0x7F;
@@ -2075,7 +1957,6 @@ int AllMpc_MapPadFromDevice(uint8_t * buffer, ssize_t size, size_t maxSize ) {
             if ( MPC_ForceColumnMode >= 0 ) { offsetL = 4; offsetC = 4; }
             break;
           default:
-            PrepareFakeMidiMsg(buffer);
             return 0;
         }
 
@@ -2086,7 +1967,7 @@ int AllMpc_MapPadFromDevice(uint8_t * buffer, ssize_t size, size_t maxSize ) {
             buffer[2] = ( buffer[0] == 0x99 ? 0x7F:0x00 ) ;
             buffer[0]   = 0x90; // MPC Button
             buffer[1] = buttonValue;
-            return 3;; // next msg
+            return r ; // next msg
         }
 
         // Column button + pad as quadran
@@ -2094,21 +1975,20 @@ int AllMpc_MapPadFromDevice(uint8_t * buffer, ssize_t size, size_t maxSize ) {
           MPC_PadOffsetL = offsetL ;
           MPC_PadOffsetC = offsetC ;
           //tklog_debug("Quadran nav = %d \n", buttonValue) ;
-          Mpc_ResfreshPadsColorFromForceCache(MPC_PadOffsetL,MPC_PadOffsetC,4);
-          Mpc_ShowForceMatrixQuadran(MPC_PadOffsetL, MPC_PadOffsetC);
-          PrepareFakeMidiMsg(buffer);
+          Mpc_ResfreshPadsColorFromForceCache(rp, MPC_PadOffsetL,MPC_PadOffsetC,4);
+          Mpc_ShowForceMatrixQuadran(rp, MPC_PadOffsetL, MPC_PadOffsetC);
+          // Block event
           return 0;
         }
 
         // Should not be here
-        PrepareFakeMidiMsg(buffer);
         return 0;
       }
 
       // Pad as usual
       else  buffer[1] = padF + FORCEPADS_TABLE_IDX_OFFSET;
 
-      return 3 ;
+      return r ;
     }
   }
 
@@ -2118,8 +1998,8 @@ int AllMpc_MapPadFromDevice(uint8_t * buffer, ssize_t size, size_t maxSize ) {
 ///////////////////////////////////////////////////////////////////////////////
 // PROCESS BUTTONS MIDI EVENT RECEIVED FROM MPC/FORCE  DEVICE
 ///////////////////////////////////////////////////////////////////////////////
-int AllMpc_MapButtonFromDevice( uint8_t * buffer, ssize_t size, size_t maxSize ) {
-  int r = - 1 ;
+int AllMpc_MapButtonFromDevice( TkRouter_t * rp, uint8_t * buffer, ssize_t size, size_t maxSize ) {
+  int r = size ;
 
   uint8_t buttonId = buffer[1];
   bool buttonPressed = ( buffer[0] == 0x90 && buffer[2] == 0x7F ? true:false ) ;
@@ -2130,7 +2010,7 @@ int AllMpc_MapButtonFromDevice( uint8_t * buffer, ssize_t size, size_t maxSize )
   // Shift is universal
   if (  buffer[0] == 0x90 && buttonId == SHIFT_KEY_VALUE   ) {
     ShiftHoldedMode = buttonPressed ;
-    return size;
+    return r;
   }
 
   // Qlink touch/untouch : MPC : 90/80 [54-63] 7F   Force : 90/80 53-5a 7f
@@ -2138,6 +2018,9 @@ int AllMpc_MapButtonFromDevice( uint8_t * buffer, ssize_t size, size_t maxSize )
       || ( MPC_OriginalId != MPC_FORCE && buttonId >= 0x54 && buttonId <= 0x63 )
     )
   {
+
+    //tklog_debug("Touch / untouch knob %02x \n", buffer[1]);
+
     // If it's a shift + knob "touch", add the offset
     if (  DeviceInfoBloc[MPC_OriginalId].qlinkKnobsCount < 16 && ShiftHoldedMode ) {
         buffer[1] += DeviceInfoBloc[MPC_OriginalId].qlinkKnobsCount;
@@ -2146,7 +2029,7 @@ int AllMpc_MapButtonFromDevice( uint8_t * buffer, ssize_t size, size_t maxSize )
     if ( MPC_OriginalId != MPC_Id && ( MPC_OriginalId == MPC_FORCE || MPC_Id == MPC_FORCE ) ) {
       buffer[1] += ( MPC_OriginalId == MPC_FORCE ? 1 : -1 ) ;
     }
-    return size;
+    return r;
   }
 
   // Return if noteoff . Only Qlink send that (untouch)
@@ -2160,27 +2043,28 @@ int AllMpc_MapButtonFromDevice( uint8_t * buffer, ssize_t size, size_t maxSize )
   // is currently holded, we send only the corresponding button, that will
   // generate the shift + button code, Otherwise, we must release the shift key,
   //  by inserting a shift key note off
-  uint8_t mapValue;
+  int mapValue;
 
   if ( ShiftHoldedMode ) {
       if ( (mapValue = map_ButtonsLeds[ buttonId + 0x80  ] ) >= 0 ) {
+        //tklog_debug("Mapvalue %02x shift mode mapping found .\n",mapValue);
 
-        if ( mapValue >= 0x80 ) buffer[1] = mapValue - 0x80;   // Shift mapped also at destination
-
+        if ( mapValue >= 0x80 ) {
+          buffer[1] = mapValue - 0x80;   // Shift mapped also at destination
+        }
         else {
           // We are holding shift, but the dest key is not a SHIFT mapping
           // insert SHIFT BUTTON release in the midi buffer
           // (we assume brutally we have room; Should check max size)
           if ( size > maxSize - 3 ) {
-            tklog_error("Midi buffer overflow when inserting SHIFT note off !!\n");
             return -1;
           }
           // make room for the shift key in the buffer
-          memcpy( &buffer[3], buffer, size - 3 );
-          size += 3;
+          memcpy( buffer + 3, buffer, 3 );
+          r += 3;
           buffer[1] = SHIFT_KEY_VALUE ;
           buffer[2] = 0x00 ; // Button released
-          // Now, map our Key
+          // Now, forward in the buffer, and map our Key
           buffer +=3;
           buffer[1] = mapValue;
         }
@@ -2189,8 +2073,7 @@ int AllMpc_MapButtonFromDevice( uint8_t * buffer, ssize_t size, size_t maxSize )
         // If no shift mapping, use the normal mapping
         buffer[1] = mapValue  ;
       }
-      else { // No Mapping
-        PrepareFakeMidiMsg(buffer);
+      else { // No Mapping. Block event
         return 0;
       }
   }
@@ -2198,8 +2081,7 @@ int AllMpc_MapButtonFromDevice( uint8_t * buffer, ssize_t size, size_t maxSize )
   else if ( ( mapValue = map_ButtonsLeds[ buttonId ] ) >= 0  ) {
     buffer[1] = mapValue  ;
   }
-  else  {  // No mapping
-    PrepareFakeMidiMsg(buffer);
+  else  {  // block event if No mapping
     return 0;
   }
 
@@ -2209,7 +2091,7 @@ int AllMpc_MapButtonFromDevice( uint8_t * buffer, ssize_t size, size_t maxSize )
   {
     // Any MPC to any MPC or Force to Force : no spoofing at all
     // Nothing to do
-    return size ;
+    return r ;
   }
   else {
     // Remap Force hardware button to MPC button
@@ -2228,16 +2110,17 @@ int AllMpc_MapButtonFromDevice( uint8_t * buffer, ssize_t size, size_t maxSize )
         case FORCE_CLIP_STOP:
           if ( buffer[2] == 0x7F ) { // Key press
               MPC_ForceColumnMode = mapValue ;
-              Mpc_DrawPadLineFromForceCache(8, MPC_PadOffsetC, 3);
-              Mpc_ShowForceMatrixQuadran(MPC_PadOffsetL, MPC_PadOffsetC);
+              Mpc_DrawPadLineFromForceCache(rp, 8, MPC_PadOffsetC, 3);
+              Mpc_ShowForceMatrixQuadran(rp, MPC_PadOffsetL, MPC_PadOffsetC);
           }
           else {
             MPC_ForceColumnMode = -1;
-            Mpc_ResfreshPadsColorFromForceCache(MPC_PadOffsetL,MPC_PadOffsetC,4);
+            Mpc_ResfreshPadsColorFromForceCache(rp,MPC_PadOffsetL,MPC_PadOffsetC,4);
+            tklog_debug("Force column mode off.\n",mapValue);
           }
           break;
       }
-      return size;
+      return r;
     }
   }
   return r;
@@ -2249,87 +2132,18 @@ int AllMpc_MapButtonFromDevice( uint8_t * buffer, ssize_t size, size_t maxSize )
 ssize_t snd_rawmidi_read(snd_rawmidi_t *rawmidi, void *buffer, size_t size) {
 
   //tklog_debug("snd_rawmidi_read %p : size : %u ", rawmidi, size);
-
 	ssize_t r = orig_snd_rawmidi_read(rawmidi, buffer, size);
-  // if ( r < 0 ) {
-  //   tklog_error("snd_rawmidi_read error : (%p) size : %u  error %d\n", rawmidi, size,r);
-  //   return r;
-  // }
-  //
-  // if ( rawMidiDumpFlag  ) RawMidiDump(rawmidi, 'i','r' , buffer, r);
-  //
-  //
-  // // Map in all cases if the app writes to the controller
-  // if ( rawmidi == rawvirt_inpriv  ) {
-  //
-  //   // We are running on a Force
-  //   if ( MPC_OriginalId == MPC_FORCE ) {
-  //     // We want to map things on Force it self
-  //     if ( MPC_Id == MPC_FORCE ) {
-  //       r = Force_MapReadFromForce(buffer,size,r);
-  //     }
-  //     // Simulate a MPC on a Force
-  //     else {
-  //       r = Force_MapReadFromMpc(buffer,size,r);
-  //     }
-  //   }
-  //   // We are running on a MPC
-  //   else {
-  //     // We need to remap on a MPC it self
-  //     if ( MPC_Id != MPC_FORCE ) {
-  //       r = Mpc_MapReadFromMpc(buffer,size,r);
-  //     }
-  //     // Simulate a Force on a MPC
-  //     else {
-  //       r = Mpc_MapReadFromForce(buffer,size,r);
-  //     }
-  //   }
-  // }
-  //
-  // if ( rawMidiDumpPostFlag ) RawMidiDump(rawmidi, 'o','r' , buffer, r);
-
+  if ( rawMidiDumpFlag  ) RawMidiDump(rawmidi, 'i','r' , buffer, r);
 	return r;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 // Alsa Rawmidi write
 ///////////////////////////////////////////////////////////////////////////////
-ssize_t snd_rawmidi_write(snd_rawmidi_t * 	rawmidi,const void * 	buffer,size_t 	size) {
+ssize_t snd_rawmidi_write(snd_rawmidi_t *rawmidi,const void *buffer,size_t size) {
 
   if ( rawMidiDumpFlag ) RawMidiDump(rawmidi, 'i','w' , buffer, size);
-
-  // Map in all cases if the app writes to the controller
-  if ( rawmidi == rawvirt_outpriv || rawmidi == rawvirt_outpub  ) {
-
-    // We are running on a Force
-    if ( MPC_OriginalId == MPC_FORCE ) {
-      // We want to map things on Force it self
-      if ( MPC_Id == MPC_FORCE ) {
-        Force_MapAppWriteToForce(buffer,size);
-      }
-      // Simulate a MPC on a Force
-      else {
-        Force_MapAppWriteToMpc(buffer,size);
-      }
-    }
-    // We are running on a MPC
-    else {
-      // We need to remap on a MPC it self
-      if ( MPC_Id != MPC_FORCE ) {
-        Mpc_MapAppWriteToMpc(buffer,size);
-      }
-      // Simulate a Force on a MPC
-      else {
-        Mpc_MapAppWriteToForce(buffer,size);
-      }
-    }
-  }
-
-
-  if ( rawMidiDumpPostFlag ) RawMidiDump(rawmidi, 'o','w' , buffer, size);
-
 	return 	orig_snd_rawmidi_write(rawmidi, buffer, size);
-
 }
 
 ///////////////////////////////////////////////////////////////////////////////
