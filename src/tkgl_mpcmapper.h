@@ -34,7 +34,7 @@ your own midi mapping to input and output midi messages.
 */
 
 
-#define VERSION "BETA2"
+#define VERSION "BETA4-MARCH 22"
 
 #define TKGL_LOGO "\
 __ __| |           |  /_) |     ___|             |           |\n\
@@ -55,6 +55,9 @@ __ __| |           |  /_) |     ___|             |           |\n\
 #define CTRL_MPC_LIVE_2 "MPC Live II"
 #define CTRL_MPC_MPC_ONE "MPC One MIDI"
 #define CTRL_MPC_ALL_PRIVATE "(MPC|Akai Pro Force).*Private$"
+
+// Custome controller name
+#define CTRL_CUSTOM "CUSTOM"
 
 // Product code file and diffrent file path to fake
 #define PRODUCT_CODE_PATH "/sys/firmware/devicetree/base/inmusic,product-code"

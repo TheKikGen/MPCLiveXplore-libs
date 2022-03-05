@@ -115,6 +115,10 @@ static char *configFileName = NULL;
 static int map_ButtonsLeds[MAPPING_TABLE_SIZE];
 static int map_ButtonsLeds_Inv[MAPPING_TABLE_SIZE]; // Inverted table
 
+// Custom controller
+static int mapCtrl_ButtonsLeds[MAPPING_TABLE_SIZE];
+static int mapCtrl_ButtonsLeds_Inv[MAPPING_TABLE_SIZE]; // Inverted table
+
 // To navigate in matrix quadran when MPC spoofing a Force
 static int MPC_PadOffsetL = 0;
 static int MPC_PadOffsetC = 0;
@@ -122,15 +126,12 @@ static int MPC_PadOffsetC = 0;
 // Force Matric pads color cache
 static Force_MPCPadColor_t Force_PadColorsCache[256];
 
-// End user virtual port name
-static char *user_virtual_portname = NULL;
-
-// End user virtual port handles
-static snd_rawmidi_t *rawvirt_user_in    = NULL ;
-static snd_rawmidi_t *rawvirt_user_out   = NULL ;
-
-// MPC Current pad bank.  A-H = 0-7
-static int MPC_PadBank = BANK_A ;
+// // End user virtual port name
+// static char *user_virtual_portname = NULL;
+//
+// // End user virtual port handles
+// static snd_rawmidi_t *rawvirt_user_in    = NULL ;
+// static snd_rawmidi_t *rawvirt_user_out   = NULL ;
 
 // SHIFT Holded mode
 // Holding shift will activate the shift mode
@@ -174,8 +175,8 @@ static snd_rawmidi_t *rawvirt_outpub  = NULL ;
 // Alsa API hooks declaration
 static typeof(&snd_rawmidi_open) orig_snd_rawmidi_open;
 static typeof(&snd_rawmidi_close) orig_snd_rawmidi_close;
-static typeof(&snd_rawmidi_read) orig_snd_rawmidi_read;
-static typeof(&snd_rawmidi_write) orig_snd_rawmidi_write;
+//static typeof(&snd_rawmidi_read) orig_snd_rawmidi_read;
+//static typeof(&snd_rawmidi_write) orig_snd_rawmidi_write;
 static typeof(&snd_seq_create_simple_port) orig_snd_seq_create_simple_port;
 static typeof(&snd_midi_event_decode) orig_snd_midi_event_decode;
 static typeof(&snd_seq_open) orig_snd_seq_open;
@@ -350,6 +351,7 @@ static void LoadMappingFromConfFile(const char * confFileName) {
 
     map_ButtonsLeds[i] = -1;
     map_ButtonsLeds_Inv[i] = -1;
+
   }
 
   if ( confFileName == NULL ) return ;  // No config file ...return
@@ -369,7 +371,7 @@ static void LoadMappingFromConfFile(const char * confFileName) {
     return ;
   }
 
-  tklog_info("%d keys found in section %s . \n",keysCount,btLedMapSectionName);
+  tklog_info("  %d keys found in section %s . \n",keysCount,btLedMapSectionName);
 
   if ( keysCount <= 0 ) {
     tklog_error("Missing section %s in configuration file %s or syntax error. No mapping set. \n",btLedMapSectionName,confFileName);
@@ -432,11 +434,135 @@ static void LoadMappingFromConfFile(const char * confFileName) {
       map_ButtonsLeds[srcButtonValue]      = destButtonValue;
       map_ButtonsLeds_Inv[destButtonValue] = srcButtonValue;
 
-      tklog_info("Item %s%s (%d/0x%02X) mapped to %s%s (%d/0x%02X)\n",srcShift?"(SHIFT) ":"",srcKeyName,srcButtonValue,srcButtonValue,destShift?"(SHIFT) ":"",destKeyName,map_ButtonsLeds[srcButtonValue],map_ButtonsLeds[srcButtonValue]);
+      tklog_info("  Item %s%s (%d/0x%02X) mapped to %s%s (%d/0x%02X)\n",srcShift?"(SHIFT) ":"",srcKeyName,srcButtonValue,srcButtonValue,destShift?"(SHIFT) ":"",destKeyName,map_ButtonsLeds[srcButtonValue],map_ButtonsLeds[srcButtonValue]);
 
     }
     else {
       tklog_error("Configuration file Error : values above 127 / 0x7F found. Check sections [%s] %s, [%s] %s.\n",btLedSrcSectionName,srcKeyName,btLedDestSectionName,destKeyName);
+      return;
+    }
+
+  } // for
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// Load Custome controller mapping tables from config file
+///////////////////////////////////////////////////////////////////////////////
+static void LoadCtrlMappingFromConfFile(const char * confFileName) {
+
+  // shortcuts
+  char *currProductStrShort = DeviceInfoBloc[MPC_Id].productStringShort;
+
+  // Section name strings
+  char ctrlMapSectionName[64];
+  char ctrlSrcSectionName[64];
+  char ctrlDestSectionName[64];
+
+  // Keys and values
+  char srcKeyName[64];
+  char destKeyName[64];
+
+  char myKey[64];
+  char myValue[64];
+
+  // Array of keys in the section
+  char keyNames [MAPPING_TABLE_SIZE][INI_FILE_KEY_MAX_LEN] ;
+
+  int  keysCount = 0;
+
+  // Initialize global mapping tables
+  for ( int i = 0 ; i < MAPPING_TABLE_SIZE ; i++ ) {
+
+    mapCtrl_ButtonsLeds[i] = -1;
+    mapCtrl_ButtonsLeds_Inv[i] = -1;
+
+  }
+
+  if ( confFileName == NULL ) return ;  // No config file ...return
+
+  // Make section names
+  sprintf(ctrlMapSectionName,"Map_%s_%s", CTRL_CUSTOM,currProductStrShort);
+  sprintf(ctrlSrcSectionName,"%s_Controller",CTRL_CUSTOM);
+  sprintf(ctrlDestSectionName,"%s_Controller",currProductStrShort);
+
+
+  // Get keys of the mapping section. You need to pass the key max len string corresponding
+  // to the size of the string within the array
+  keysCount = GetKeyValueFromConfFile(confFileName, ctrlMapSectionName,NULL,NULL,keyNames,MAPPING_TABLE_SIZE) ;
+
+  if (keysCount < 0) {
+    tklog_error("Configuration file %s read error.\n", confFileName);
+    return ;
+  }
+
+  tklog_info("  %d keys found in section %s . \n",keysCount,ctrlMapSectionName);
+
+  if ( keysCount <= 0 ) {
+    tklog_error("Missing section %s in configuration file %s or syntax error. No mapping set. \n",ctrlMapSectionName,confFileName);
+    return;
+  }
+
+  // Read the Buttons & Leds mapping section entries
+  for ( int i = 0 ; i < keysCount ; i++ ) {
+
+    // Buttons & Leds mapping
+
+    // Ignore parameters
+    if ( strncmp(keyNames[i],"_p_",3) == 0 ) continue;
+
+    strcpy(srcKeyName, keyNames[i] );
+
+    if (  GetKeyValueFromConfFile(confFileName, ctrlMapSectionName,srcKeyName,myValue,NULL,0) != 1 ) {
+      tklog_error("Value not found for %s key in section[%s].\n",srcKeyName,ctrlMapSectionName);
+      continue;
+    }
+    // Mapped button name
+    // Check if the reserved keyword "(SHIFT)_" is present
+    // Shift mode of a src button
+    bool srcShift = false;
+    if ( strncmp(srcKeyName,"(SHIFT)_",8) == 0 )  {
+        srcShift = true;
+        strcpy(srcKeyName, &srcKeyName[8] );
+    }
+
+    strcpy(destKeyName,myValue);
+    bool destShift = false;
+    if ( strncmp(destKeyName,"(SHIFT)_",8) == 0 )  {
+        destShift = true;
+        strcpy(destKeyName, &destKeyName[8] );
+    }
+
+    // Read value in original device section
+    if (  GetKeyValueFromConfFile(confFileName, ctrlSrcSectionName,srcKeyName,myValue,NULL,0) != 1 ) {
+      tklog_error("Value not found for %s key in section[%s].\n",srcKeyName,ctrlSrcSectionName);
+      continue;
+    }
+
+    // Save the button value
+    int srcButtonValue =  strtol(myValue, NULL, 0);
+
+    // Read value in target device section
+    if (  GetKeyValueFromConfFile(confFileName, ctrlDestSectionName,destKeyName,myValue,NULL,0) != 1 ) {
+      tklog_error("Error *** Value not found for %s key in section[%s].\n",destKeyName,ctrlDestSectionName);
+      continue;
+    }
+
+    int destButtonValue = strtol(myValue, NULL, 0);
+
+    if ( srcButtonValue <=127 && destButtonValue <=127 ) {
+
+      // If shift mapping, set the bit 7
+      srcButtonValue   = ( srcShift  ? srcButtonValue  + 0x80 : srcButtonValue );
+      destButtonValue  = ( destShift ? destButtonValue + 0x80 : destButtonValue );
+
+      mapCtrl_ButtonsLeds[srcButtonValue]      = destButtonValue;
+      mapCtrl_ButtonsLeds_Inv[destButtonValue] = srcButtonValue;
+
+      tklog_info("  Item %s%s (%d/0x%02X) mapped to %s%s (%d/0x%02X)\n",srcShift?"(SHIFT) ":"",srcKeyName,srcButtonValue,srcButtonValue,destShift?"(SHIFT) ":"",destKeyName,mapCtrl_ButtonsLeds[srcButtonValue],mapCtrl_ButtonsLeds[srcButtonValue]);
+
+    }
+    else {
+      tklog_error("Configuration file Error : values above 127 / 0x7F found. Check sections [%s] %s, [%s] %s.\n",ctrlSrcSectionName,srcKeyName,ctrlDestSectionName,destKeyName);
       return;
     }
 
@@ -680,167 +806,166 @@ const char * GetHwNameFromMPC_Id(uint8_t id){
 ///////////////////////////////////////////////////////////////////////////////
 static void dump_event(const snd_seq_event_t *ev)
 {
-	printf("%3d:%-3d ", ev->source.client, ev->source.port);
+	tklog_trace("Source port : %3d:%-3d\n", ev->source.client, ev->source.port);
 	switch (ev->type) {
 	case SND_SEQ_EVENT_NOTEON:
-		printf("Note on                %2d %3d %3d\n",
+		tklog_trace("Note on                %2d %3d %3d\n",
 		       ev->data.note.channel, ev->data.note.note, ev->data.note.velocity);
 		break;
 	case SND_SEQ_EVENT_NOTEOFF:
-		printf("Note off               %2d %3d %3d\n",
+		tklog_trace("Note off               %2d %3d %3d\n",
 		       ev->data.note.channel, ev->data.note.note, ev->data.note.velocity);
 		break;
 	case SND_SEQ_EVENT_KEYPRESS:
-		printf("Polyphonic aftertouch  %2d %3d %3d\n",
+		tklog_trace("Polyphonic aftertouch  %2d %3d %3d\n",
 		       ev->data.note.channel, ev->data.note.note, ev->data.note.velocity);
 		break;
 	case SND_SEQ_EVENT_CONTROLLER:
-		printf("Control change         %2d %3d %3d\n",
+		tklog_trace("Control change         %2d %3d %3d\n",
 		       ev->data.control.channel, ev->data.control.param, ev->data.control.value);
 		break;
 	case SND_SEQ_EVENT_PGMCHANGE:
-		printf("Program change         %2d %3d\n",
+		tklog_trace("Program change         %2d %3d\n",
 		       ev->data.control.channel, ev->data.control.value);
 		break;
 	case SND_SEQ_EVENT_CHANPRESS:
-		printf("Channel aftertouch     %2d %3d\n",
+		tklog_trace("Channel aftertouch     %2d %3d\n",
 		       ev->data.control.channel, ev->data.control.value);
 		break;
 	case SND_SEQ_EVENT_PITCHBEND:
-		printf("Pitch bend             %2d  %6d\n",
+		tklog_trace("Pitch bend             %2d  %6d\n",
 		       ev->data.control.channel, ev->data.control.value);
 		break;
 	case SND_SEQ_EVENT_CONTROL14:
-		printf("Control change         %2d %3d %5d\n",
+		tklog_trace("Control change         %2d %3d %5d\n",
 		       ev->data.control.channel, ev->data.control.param, ev->data.control.value);
 		break;
 	case SND_SEQ_EVENT_NONREGPARAM:
-		printf("Non-reg. parameter     %2d %5d %5d\n",
+		tklog_trace("Non-reg. parameter     %2d %5d %5d\n",
 		       ev->data.control.channel, ev->data.control.param, ev->data.control.value);
 		break;
 	case SND_SEQ_EVENT_REGPARAM:
-		printf("Reg. parameter         %2d %5d %5d\n",
+		tklog_trace("Reg. parameter         %2d %5d %5d\n",
 		       ev->data.control.channel, ev->data.control.param, ev->data.control.value);
 		break;
 	case SND_SEQ_EVENT_SONGPOS:
-		printf("Song position pointer     %5d\n",
+		tklog_trace("Song position pointer     %5d\n",
 		       ev->data.control.value);
 		break;
 	case SND_SEQ_EVENT_SONGSEL:
-		printf("Song select               %3d\n",
+		tklog_trace("Song select               %3d\n",
 		       ev->data.control.value);
 		break;
 	case SND_SEQ_EVENT_QFRAME:
-		printf("MTC quarter frame         %02xh\n",
+		tklog_trace("MTC quarter frame         %02xh\n",
 		       ev->data.control.value);
 		break;
 	case SND_SEQ_EVENT_TIMESIGN:
 		// XXX how is this encoded?
-		printf("SMF time signature        (%#08x)\n",
+		tklog_trace("SMF time signature        (%#08x)\n",
 		       ev->data.control.value);
 		break;
 	case SND_SEQ_EVENT_KEYSIGN:
 		// XXX how is this encoded?
-		printf("SMF key signature         (%#08x)\n",
+		tklog_trace("SMF key signature         (%#08x)\n",
 		       ev->data.control.value);
 		break;
 	case SND_SEQ_EVENT_START:
 		if (ev->source.client == SND_SEQ_CLIENT_SYSTEM &&
 		    ev->source.port == SND_SEQ_PORT_SYSTEM_TIMER)
-			printf("Queue start               %d\n",
+			tklog_trace("Queue start               %d\n",
 			       ev->data.queue.queue);
 		else
-			printf("Start\n");
+			tklog_trace("Start\n");
 		break;
 	case SND_SEQ_EVENT_CONTINUE:
 		if (ev->source.client == SND_SEQ_CLIENT_SYSTEM &&
 		    ev->source.port == SND_SEQ_PORT_SYSTEM_TIMER)
-			printf("Queue continue            %d\n",
+			tklog_trace("Queue continue            %d\n",
 			       ev->data.queue.queue);
 		else
-			printf("Continue\n");
+			tklog_trace("Continue\n");
 		break;
 	case SND_SEQ_EVENT_STOP:
 		if (ev->source.client == SND_SEQ_CLIENT_SYSTEM &&
 		    ev->source.port == SND_SEQ_PORT_SYSTEM_TIMER)
-			printf("Queue stop                %d\n",
+			tklog_trace("Queue stop                %d\n",
 			       ev->data.queue.queue);
 		else
-			printf("Stop\n");
+			tklog_trace("Stop\n");
 		break;
 	case SND_SEQ_EVENT_SETPOS_TICK:
-		printf("Set tick queue pos.       %d\n", ev->data.queue.queue);
+		tklog_trace("Set tick queue pos.       %d\n", ev->data.queue.queue);
 		break;
 	case SND_SEQ_EVENT_SETPOS_TIME:
-		printf("Set rt queue pos.         %d\n", ev->data.queue.queue);
+		tklog_trace("Set rt queue pos.         %d\n", ev->data.queue.queue);
 		break;
 	case SND_SEQ_EVENT_TEMPO:
-		printf("Set queue tempo           %d\n", ev->data.queue.queue);
+		tklog_trace("Set queue tempo           %d\n", ev->data.queue.queue);
 		break;
 	case SND_SEQ_EVENT_CLOCK:
-		printf("Clock\n");
+		tklog_trace("Clock\n");
 		break;
 	case SND_SEQ_EVENT_TICK:
-		printf("Tick\n");
+		tklog_trace("Tick\n");
 		break;
 	case SND_SEQ_EVENT_QUEUE_SKEW:
-		printf("Queue timer skew          %d\n", ev->data.queue.queue);
+		tklog_trace("Queue timer skew          %d\n", ev->data.queue.queue);
 		break;
 	case SND_SEQ_EVENT_TUNE_REQUEST:
 		/* something's fishy here ... */
-		printf("Tuna request\n");
+		tklog_trace("Tuna request\n");
 		break;
 	case SND_SEQ_EVENT_RESET:
-		printf("Reset\n");
+		tklog_trace("Reset\n");
 		break;
 	case SND_SEQ_EVENT_SENSING:
-		printf("Active Sensing\n");
+		tklog_trace("Active Sensing\n");
 		break;
 	case SND_SEQ_EVENT_CLIENT_START:
-		printf("Client start              %d\n",
+		tklog_trace("Client start              %d\n",
 		       ev->data.addr.client);
 		break;
 	case SND_SEQ_EVENT_CLIENT_EXIT:
-		printf("Client exit               %d\n",
+		tklog_trace("Client exit               %d\n",
 		       ev->data.addr.client);
 		break;
 	case SND_SEQ_EVENT_CLIENT_CHANGE:
-		printf("Client changed            %d\n",
+		tklog_trace("Client changed            %d\n",
 		       ev->data.addr.client);
 		break;
 	case SND_SEQ_EVENT_PORT_START:
-		printf("Port start                %d:%d\n",
+		tklog_trace("Port start                %d:%d\n",
 		       ev->data.addr.client, ev->data.addr.port);
 		break;
 	case SND_SEQ_EVENT_PORT_EXIT:
-		printf("Port exit                 %d:%d\n",
+		tklog_trace("Port exit                 %d:%d\n",
 		       ev->data.addr.client, ev->data.addr.port);
 		break;
 	case SND_SEQ_EVENT_PORT_CHANGE:
-		printf("Port changed              %d:%d\n",
+		tklog_trace("Port changed              %d:%d\n",
 		       ev->data.addr.client, ev->data.addr.port);
 		break;
 	case SND_SEQ_EVENT_PORT_SUBSCRIBED:
-		printf("Port subscribed           %d:%d -> %d:%d\n",
+		tklog_trace("Port subscribed           %d:%d -> %d:%d\n",
 		       ev->data.connect.sender.client, ev->data.connect.sender.port,
 		       ev->data.connect.dest.client, ev->data.connect.dest.port);
 		break;
 	case SND_SEQ_EVENT_PORT_UNSUBSCRIBED:
-		printf("Port unsubscribed         %d:%d -> %d:%d\n",
+		tklog_trace("Port unsubscribed         %d:%d -> %d:%d\n",
 		       ev->data.connect.sender.client, ev->data.connect.sender.port,
 		       ev->data.connect.dest.client, ev->data.connect.dest.port);
 		break;
 	case SND_SEQ_EVENT_SYSEX:
 		{
 			unsigned int i;
-			printf("System exclusive         ");
-			for (i = 0; i < ev->data.ext.len; ++i)
-				printf(" %02X", ((unsigned char*)ev->data.ext.ptr)[i]);
-			printf("\n");
+			tklog_trace("System exclusive         \n");
+      ShowBufferHexDump((uint8_t*)ev->data.ext.ptr, ev->data.ext.len,16 );
+			tklog_trace("\n");
 		}
 		break;
 	default:
-		printf("Event type %d\n",  ev->type);
+		tklog_trace("Event type %d\n",  ev->type);
 	}
 }
 
@@ -976,7 +1101,7 @@ int ControllerInitialize(TkRouter_t *rp) {
   SeqSendRawMidi(rp->seq, rp->portCtrl,  SX_LPMK3_DAW_CLEAR, sizeof(SX_LPMK3_DAW_CLEAR) );
   SeqSendRawMidi(rp->seq, rp->portCtrl,  SX_LPMK3_PGM_MODE, sizeof(SX_LPMK3_PGM_MODE) );
 
-  ControllerScrollText(rp,"The KikGen Labs - - - IamForce",0,21,COLOR_SEA);
+  ControllerScrollText(rp,"***IamForce",0,21,COLOR_SEA);
 
   uint8_t midiMsg[3];
   midiMsg[0]=0x92;
@@ -1007,8 +1132,18 @@ void threadMidiProcessAndRoute(TkRouter_t *rp) {
       if ( size <= 0 ) continue;
 
       r = size ;
+      if ( rawMidiDumpFlag && r > 0 ) {
+        tklog_trace("TKGL_Router dump entry (%d bytes):\n",r);
+        ShowBufferHexDump(buffer,r,16);
+        tklog_trace("\n");
+        //dump_event(ev);
+      }
+
+
       snd_seq_ev_set_subs(ev);
       snd_seq_ev_set_direct(ev);
+
+
       //dump_event(ev);
 
       // -----------------------------------------------------------------------
@@ -1131,6 +1266,13 @@ void threadMidiProcessAndRoute(TkRouter_t *rp) {
         }
       }
 
+    if ( rawMidiDumpPostFlag && r > 0 ) {
+      tklog_trace("TKGL_Router dump post (%d bytes):\n",r);
+      ShowBufferHexDump(buffer,r,16);
+      tklog_trace("\n");
+      //dump_event(ev);
+    }
+
   } while (snd_seq_event_input_pending(rp->seq, 0) > 0);
 
   // Take care of our eventual special options pad lines
@@ -1222,8 +1364,8 @@ static void makeLdHooks() {
 	// Alsa hooks
 	orig_snd_rawmidi_open           = dlsym(RTLD_NEXT, "snd_rawmidi_open");
   orig_snd_rawmidi_close          = dlsym(RTLD_NEXT, "snd_rawmidi_close");
-	orig_snd_rawmidi_read           = dlsym(RTLD_NEXT, "snd_rawmidi_read");
-	orig_snd_rawmidi_write          = dlsym(RTLD_NEXT, "snd_rawmidi_write");
+	//orig_snd_rawmidi_read           = dlsym(RTLD_NEXT, "snd_rawmidi_read");
+	//orig_snd_rawmidi_write          = dlsym(RTLD_NEXT, "snd_rawmidi_write");
 	orig_snd_seq_create_simple_port = dlsym(RTLD_NEXT, "snd_seq_create_simple_port");
 	orig_snd_midi_event_decode      = dlsym(RTLD_NEXT, "snd_midi_event_decode");
   orig_snd_seq_open               = dlsym(RTLD_NEXT, "snd_seq_open");
@@ -1267,8 +1409,12 @@ static void tkgl_init()
   // Fake the power supply ?
   if ( DeviceInfoBloc[MPC_OriginalId].fakePowerSupply ) tklog_info("The power supply will be faked to allow battery mode.\n");
 
-  // read mapping config file if any
+  // read mpc device mapping config file if any
+  tklog_info("MPCs controller mapping :\n");
   LoadMappingFromConfFile(configFileName);
+
+  tklog_info("Custom controller mapping :\n");
+  LoadCtrlMappingFromConfFile(configFileName);
 
   // Retrieve MPC midi card info
   if ( GetSeqClientFromPortName(CTRL_MPC_ALL_PRIVATE,NULL,&TkRouter.Mpc.card,&TkRouter.Mpc.cli,&TkRouter.Mpc.portPriv) < 0 ) {
@@ -1399,7 +1545,7 @@ static void ShowBufferHexDump(const uint8_t* data, ssize_t sz, uint8_t nl)
     uint8_t c=0;
 
     for (uint16_t idx = 0 ; idx < sz; idx++) {
-			if ( c == 0 && idx >= 0) tklog_trace("");
+		  	if ( c == 0 && idx >= 0) tklog_trace("");
         b = (*data++);
   		  fprintf(stdout,"%02X ",b);
         asciiBuff[c++] = ( b >= 0x20 && b< 127? b : '.' ) ;
@@ -1410,23 +1556,6 @@ static void ShowBufferHexDump(const uint8_t* data, ssize_t sz, uint8_t nl)
           fprintf(stdout," | %s\n", asciiBuff);
         }
     }
-}
-
-////////////////////////////////////////////////////////////////////////////////
-// RawMidi dump
-////////////////////////////////////////////////////////////////////////////////
-static void RawMidiDump(snd_rawmidi_t *rawmidi, char io,char rw,const uint8_t* data, size_t sz) {
-
-  char name[64];
-  if ( rawmidi == rawvirt_inpriv ) strcpy(name,"Virt in Private");
-  else if ( rawmidi == rawvirt_outpriv ) strcpy(name,"Virt out Private");
-  else if ( rawmidi == rawvirt_outpub ) strcpy(name,"Virt out Public");
-  else strcpy( name,snd_rawmidi_name(rawmidi) );
-
-  tklog_trace("%s dump snd_rawmidi_%s from controller %s\n",io == 'i'? "Entry":"Post",rw == 'r'? "read":"write",name);
-  ShowBufferHexDump(data, sz,16);
-  tklog_trace("\n");
-
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -1813,15 +1942,12 @@ int AllMpc_MapLedToDevice( TkRouter_t *rp, uint8_t * buffer, ssize_t size, size_
 // PROCESS Encoders Qlink MIDI EVENT RECEIVED FROM MPC/FORCE  DEVICE
 ///////////////////////////////////////////////////////////////////////////////
 int AllMpc_MapEncoderFromDevice( TkRouter_t *rp, uint8_t * buffer, ssize_t size, size_t maxSize ) {
-  int r = - 1 ;
 
   if ( ShiftHoldedMode && DeviceInfoBloc[MPC_OriginalId].qlinkKnobsCount < 16 ) {
-
     buffer[1] +=  DeviceInfoBloc[MPC_OriginalId].qlinkKnobsCount;
-    r = size;
-  }
+    }
 
-  return r;
+  return size;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -2088,25 +2214,25 @@ int AllMpc_MapButtonFromDevice( TkRouter_t * rp, uint8_t * buffer, ssize_t size,
   return r;
 }
 
-///////////////////////////////////////////////////////////////////////////////
-// Alsa Rawmidi read
-///////////////////////////////////////////////////////////////////////////////
-ssize_t snd_rawmidi_read(snd_rawmidi_t *rawmidi, void *buffer, size_t size) {
-
-  //tklog_debug("snd_rawmidi_read %p : size : %u ", rawmidi, size);
-	ssize_t r = orig_snd_rawmidi_read(rawmidi, buffer, size);
-  if ( rawMidiDumpFlag  ) RawMidiDump(rawmidi, 'i','r' , buffer, r);
-	return r;
-}
-
-///////////////////////////////////////////////////////////////////////////////
-// Alsa Rawmidi write
-///////////////////////////////////////////////////////////////////////////////
-ssize_t snd_rawmidi_write(snd_rawmidi_t *rawmidi,const void *buffer,size_t size) {
-
-  if ( rawMidiDumpFlag ) RawMidiDump(rawmidi, 'i','w' , buffer, size);
-	return 	orig_snd_rawmidi_write(rawmidi, buffer, size);
-}
+// ///////////////////////////////////////////////////////////////////////////////
+// // Alsa Rawmidi read
+// ///////////////////////////////////////////////////////////////////////////////
+// ssize_t snd_rawmidi_read(snd_rawmidi_t *rawmidi, void *buffer, size_t size) {
+//
+//   //tklog_debug("snd_rawmidi_read %p : size : %u ", rawmidi, size);
+// 	ssize_t r = orig_snd_rawmidi_read(rawmidi, buffer, size);
+//   // if ( rawMidiDumpFlag  ) RawMidiDump(rawmidi, 'i','r' , buffer, r);
+// 	return r;
+// }
+//
+// ///////////////////////////////////////////////////////////////////////////////
+// // Alsa Rawmidi write
+// ///////////////////////////////////////////////////////////////////////////////
+// ssize_t snd_rawmidi_write(snd_rawmidi_t *rawmidi,const void *buffer,size_t size) {
+//
+//   // if ( rawMidiDumpFlag ) RawMidiDump(rawmidi, 'i','w' , buffer, size);
+// 	return 	orig_snd_rawmidi_write(rawmidi, buffer, size);
+// }
 
 ///////////////////////////////////////////////////////////////////////////////
 // Alsa open sequencer
