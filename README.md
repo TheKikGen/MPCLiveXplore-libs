@@ -144,6 +144,10 @@ hw:1,0,1 --> MPC      = F0 47 7F 3B 41 00 13 00 00 00 00 00 00 00 00 00  | .G.;A
                         00 00 00 00 00 00 00 00 00 00 F7                 | ...........
 
 ```
+
+## TKGL_MPCMAPPER
+
+
 ## TKGL_IAMFORCE
 
 A first derivative POC based on the anyctrl library allowed hardware identity spoofing.
