@@ -147,6 +147,22 @@ hw:1,0,1 --> MPC      = F0 47 7F 3B 41 00 13 00 00 00 00 00 00 00 00 00  | .G.;A
 
 ## TKGL_MPCMAPPER
 
+This "low-level" library allows you to hijack the MPC/Force application to add your own midi mapping to input and output midi messages. 
+This library is used for the new version of IamForce, as mpcmapper allows to hack MPCs or Force 
+
+You can use the following options on the LD_PRELOAD command line :
+--tgkl_help               : Show this help<br>
+--tkgl_ctrlname=<name>    : Use external controller containing <name><br>
+--tkgl_iamX               : Emulate MPC X on your current hardware<br>
+--tkgl_iamLive            : Emulate MPC Live on your current hardware<br>
+--tkgl_iamForce           : Emulate Force on your current hardware<br>
+--tkgl_iamOne             : Emulate MPC One on your current hardware<br>
+--tkgl_iamLive2           : Emulate MPC Live Mk II  on your current hardware<br>
+--tkgl_virtualport=<name> : Create end user virtual port that will be visible within the MPC application<br>
+--tkgl_mididump           : Dump original raw midi flow (similar to TKGL_CTRLDUMP) <br>
+--tkgl_mididumpPost       : Dump raw midi flow after transformation used to dump midi message after transformation<br>
+--tkgl_configfile=<name>  : Use configuration file <name> notably to map current harware buttons to specific emulated device funtion<br>
+
 
 ## TKGL_IAMFORCE
 
