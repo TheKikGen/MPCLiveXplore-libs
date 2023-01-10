@@ -64,8 +64,9 @@ Compile with :
 #define CTRL_FORCE "Akai Pro Force"
 #define CTRL_MPC_X "MPC X Controller"
 #define CTRL_MPC_LIVE "MPC Live Controller"
-#define CTRL_MPC_ALL ".*(MPC.*Controller|Akai Pro Force).*"
-
+//#define CTRL_MPC_ALL ".*(MPC.*Controller|Akai Pro Force).*"
+#define CTRL_MPC_ALL_PRIVATE "(MPC|Akai Pro Force).*Private$"
+#define CTRL_MPC_ALL_PUBLIC "(MPC|Akai Pro Force).*Public$"
 
 // Function prototypes
 
@@ -74,10 +75,13 @@ Compile with :
 // MPC alsa informations
 static int  mpc_midi_card = -1;
 static int  mpc_seq_client = -1;
+static int  mpc_seq_portpriv = -1;
+
 static char mpc_midi_private_alsa_name[20];
 static char mpc_midi_public_alsa_name[20];
 
 // Midi controller seq client
+static int seqanyctrl_card  = -1;
 static int seqanyctrl_client=-1;
 static int seqanyctrl_firstport = 1;
 
@@ -97,7 +101,7 @@ static typeof(&snd_midi_event_decode) orig_snd_midi_event_decode;
 ///////////////////////////////////////////////////////////////////////////////
 // Match string against a regular expression
 ///////////////////////////////////////////////////////////////////////////////
-int match(const char *string, char *pattern)
+int match(const char *string, const char *pattern)
 {
     int    status;
     regex_t    re;
@@ -114,16 +118,34 @@ int match(const char *string, char *pattern)
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-// Get an ALSA sequencer client containing a name
+// Get an ALSA card from a matching regular expression pattern
 ///////////////////////////////////////////////////////////////////////////////
-int GetSeqClientFromPortName(const char * name) {
+int GetCardFromShortName(const char *pattern) {
+   int card = -1;
+   char* shortname = NULL;
 
-	if ( name == NULL) return -1;
+   if ( snd_card_next(&card) < 0) return -1;
+   while (card >= 0) {
+   	  if ( snd_card_get_name(card, &shortname) == 0 && match(shortname,pattern) ) return card;
+   	  if ( snd_card_next(&card) < 0) break;
+   }
+   return -1;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// Get an ALSA sequencer client , port and alsa card  from a regexp pattern
+///////////////////////////////////////////////////////////////////////////////
+// Will return 0 if found,.  if trueName or card are NULL, they are ignored.
+int GetSeqClientFromPortName(const char * pattern, char trueName[], int *card, int *clientId, int *portId) {
+
+	if ( pattern == NULL) return -1;
 	char port_name[128];
+  int c= -1;
+  int r= -1;
 
 	snd_seq_t *seq;
 	if (snd_seq_open(&seq, "default", SND_SEQ_OPEN_DUPLEX, 0) < 0) {
-		fprintf(stderr,"(tkgl_anyctrl) impossible to open default seq\n");
+		printf("Impossible to open default seq (GetSeqClientFromPortName).\n");
 		return -1;
 	}
 
@@ -137,17 +159,26 @@ int GetSeqClientFromPortName(const char * name) {
 		/* reset query info */
 		snd_seq_port_info_set_client(pinfo, snd_seq_client_info_get_client(cinfo));
 		snd_seq_port_info_set_port(pinfo, -1);
-		while (snd_seq_query_next_port(seq, pinfo) >= 0) {
+    while (snd_seq_query_next_port(seq, pinfo) >= 0) {
 			sprintf(port_name,"%s %s",snd_seq_client_info_get_name(cinfo),snd_seq_port_info_get_name(pinfo));
-			if (strstr(port_name,name)) {
-				snd_seq_close(seq);
-				return snd_seq_client_info_get_client(cinfo) ;
+      if (match(port_name,pattern) ) {
+        if ( card != NULL ) {
+          c = GetCardFromShortName(snd_seq_client_info_get_name(cinfo));
+          if ( c < 0 ) break;
+          *card = c;
+        }
+        *clientId = snd_seq_port_info_get_client(pinfo);
+        *portId = snd_seq_port_info_get_port(pinfo);
+        if ( trueName != NULL ) strcpy(trueName,snd_seq_port_info_get_name(pinfo));
+        //tklog_debug("(hw:%d) Client %d:%d - %s%s\n",c, snd_seq_port_info_get_client(pinfo),snd_seq_port_info_get_port(pinfo),port_name );
+        r = 0;
+        break;
 			}
 		}
 	}
 
 	snd_seq_close(seq);
-	return  -1;
+	return  -r;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -182,20 +213,7 @@ int GetLastSeqClient() {
 	return  r;
 }
 
-///////////////////////////////////////////////////////////////////////////////
-// Get an ALSA card from a matching regular expression pattern
-///////////////////////////////////////////////////////////////////////////////
-int GetCardFromShortName(char *pattern) {
-   int card = -1;
-   char* shortname = NULL;
 
-   if ( snd_card_next(&card) < 0) return -1;
-   while (card >= 0) {
-   	  if ( snd_card_get_name(card, &shortname) == 0 && match(shortname,pattern) ) return card;
-   	  if ( snd_card_next(&card) < 0) break;
-   }
-   return -1;
-}
 
 ///////////////////////////////////////////////////////////////////////////////
 // ALSA aconnect utility API equivalent
@@ -292,20 +310,11 @@ static void tkgl_init()
 	orig_snd_midi_event_decode         = dlsym(RTLD_NEXT, "snd_midi_event_decode");
 
 	// Initialize card id for public and private
-	mpc_midi_card = GetCardFromShortName(CTRL_MPC_ALL);
-	if ( mpc_midi_card < 0 ) {
-			fprintf(stderr,"(tkgl_anyctrl) **** Error : MPC card not found\n");
-			exit(1);
-	}
 
-	// Get MPC seq
-	// Public is port 0, Private is port 1
-	mpc_seq_client = GetSeqClientFromPortName("Private");
-
-	if ( mpc_seq_client  < 0 ) {
-		fprintf(stderr,"(tkgl_anyctrl) **** Error : MPC seq client not found\n");
-		exit(1);
-	}
+  if ( GetSeqClientFromPortName(CTRL_MPC_ALL_PRIVATE,NULL,&mpc_midi_card,&mpc_seq_client,&mpc_seq_portpriv) < 0 ) {
+    fprintf(stdout,"(tkgl_anyctrl) Error : MPC controller card/seq client not found (regex pattern is '%s')\n",CTRL_MPC_ALL_PRIVATE);
+    exit(1);
+  }
 
 	sprintf(mpc_midi_private_alsa_name,"hw:%d,0,1",mpc_midi_card);
 	sprintf(mpc_midi_public_alsa_name,"hw:%d,0,0",mpc_midi_card);
@@ -321,12 +330,12 @@ static void tkgl_init()
 		fprintf(stdout,"(tkgl_anyctrl) ANYCTRL_NAME environment variable not set.\n") ;
 	}
 	else {
-		// Initialize card id for public and private
-		seqanyctrl_client = GetSeqClientFromPortName(port_name);
-		if ( seqanyctrl_client  < 0 )
-			fprintf(stderr,"(tkgl_anyctrl) **** Warning : %s seq client not found\n",port_name);
-    else
-      fprintf(stdout,"(tkgl_anyctrl) %s connect port is %d:0\n",port_name,seqanyctrl_client);
+    // Initialize card id for public and private
+    if ( GetSeqClientFromPortName(port_name,NULL,&seqanyctrl_card,&seqanyctrl_client,&seqanyctrl_firstport) < 0 ) {
+      fprintf(stdout,"(tkgl_anyctrl) **** Warning : %s seq client not found\n",port_name);
+      exit(1);
+    }
+    fprintf(stdout,"(tkgl_anyctrl) %s connect port is %d:0\n",port_name,seqanyctrl_client);
 	}
 
 	// Create 1 IN virtual port for Private IN
