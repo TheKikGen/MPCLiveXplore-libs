@@ -10,7 +10,7 @@ NB : You need SSH images uopdate to use these libraries.
 
 ### TKGL_ANYCTRL  TKGL_ANYCTRL_LT
 
-This "low-level" library allows you to set up any controller as a control surface to drive the MPC standalone application. 
+These 2 "low-level" libraries allows you to set up any controller as a control surface to drive the MPC standalone application. 
 
 NB: you need ssh access to your MPC.
 
@@ -31,8 +31,8 @@ By a simple midi message mapping in your own controller, it is possible now to s
 	IO  hw:2,0,2  Midi Out
 	IO  hw:2,0,3  Midi Out
 
-The "PRIVATE" and "PUBLIC"  ports used by the MPC application to send or capture messages from the MPC controller are replaced by a 3 rawmidi virtual seq ports (usually #134-135-136).   These virtual ports are reconnected to the physical port of the controller with an alsa connection, similar to the "aconnect" command line ALSA utility, before the sending of SYSEX controller identification sequences.  These virtual ports can be then used to connect any other controller in addition to the standard hardware.  
-Note that running status are inhibited.
+The "PRIVATE" and "PUBLIC"  ports used by the MPC application to send or capture messages from the MPC controller are replaced by a 3 rawmidi virtual seq ports (usually #134-135-136).   These virtual ports are reconnected to the physical ports of the controller with an alsa connection, similar to the "aconnect" command line ALSA utility, before the sending of SYSEX controller identification sequences.  These virtual ports can be then used to connect any other controller in addition to the standard hardware.  
+Note that,as a side effect,  midi running status are inhibited.
 
 So , now, you can add "buttons" allowing direct access to the different screens of the MPC application, as the MPC X or ONE do.  
 You can even consider making a dedicated DIY usb controller (check my other Kikpad project) to add buttons or qlinks (like SOLO or MUTE buttons on the MPC Live for example).
@@ -41,8 +41,10 @@ Note : MPC users can use the ["global mapping"](https://github.com/TheKikGen/MPC
 
 #### Quick setup
 
-Copy the tkgl_anyctrl.so library on a usb stick of a smartcard.
-The "ANYCTRL_NAME" environment varaible can contains a string / substring matching the name of the midi controller you want to use to simulate a MPC controller.   
+Copy the tkgl_anyctrl.so library on a usb stick of a smartcard.  
+tkgl_anyctrl_lt.so is exactly the same, but will map only private port. It is enough for simple button mapping.  
+
+The "ANYCTRL_NAME" environment varaible can contains a regex pattern matching the name of the midi controller + port  you want to use to simulate a MPC controller. You can use a "aconnect -l" command to get your controller exact ports names.  
 To avoid crashes due to potential infinite midi loops, the first midi port of your controller will be disabled within the MPC application, so you will not see it anymore in midi devices setting.
 
 If that variable is not defined, the application will start as usual, but will still use virtual ports in place of hardware ports.
