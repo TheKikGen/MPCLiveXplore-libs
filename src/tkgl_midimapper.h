@@ -54,7 +54,9 @@ __ __| |           |  /_) |     ___|             |           |\n\
 #define PRODUCT_CODE_PATH "/sys/firmware/devicetree/base/inmusic,product-code"
 
 // Send and destination Ids for midi messages
-enum FromToMidiIds  {  MPC_PRIVATE, MPC_PUBLIC,CTRL_MPC, MPC_EXTCTRL, CTRL_EXT };
+enum FromPortsIds  {  FROM_MPC_PRIVATE, FROM_MPC_PUBLIC,FROM_CTRL_MPC, FROM_MPC_EXTCTRL, FROM_CTRL_EXT };
+enum ToPortsIds    {  TO_CTRL_MPC_PRIVATE, TO_CTRL_MPC_PUBLIC, TO_MPC_PRIVATE, TO_MPC_EXTCTRL, TO_CTRL_EXT };
+
 
 // Device info block typedef
 typedef struct {
@@ -137,4 +139,6 @@ const static DeviceInfo_t DeviceInfoBloc[] = {
 void ShowBufferHexDump(const uint8_t* data, ssize_t sz, uint8_t nl);
 int match(const char *string, const char *pattern);
 void dump_event(const snd_seq_event_t *ev);
-int SeqSendRawMidi(snd_seq_t *seqHandle, uint8_t port,  const uint8_t *buffer, size_t size ) ;
+int SeqSendRawMidi( uint8_t destId,  const uint8_t *buffer, size_t size ) ;
+int SetMidiEventDestination(snd_seq_event_t *ev, uint8_t destId );
+int GetSeqPortFromDestinationId(uint8_t destId );
