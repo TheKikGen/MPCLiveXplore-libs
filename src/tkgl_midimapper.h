@@ -43,7 +43,9 @@ __ __| |           |  /_) |     ___|             |           |\n\
  _|  _| |_|\\___| _|\\_\\_|_|\\_\\\\____|\\___|_|  _| _____|\\__,_|_.__/ ____/\n\
 "
 // Router
-#define ROUTER_SEQ_NAME "TKGL MIDI router"
+#define ROUTER_SEQ_NAME "TKGL Midi"
+
+#define ROUTER_CTRL_PORT_NAME "Ctrl"
 
 #define MIDI_DECODER_SIZE 256
 
@@ -52,7 +54,7 @@ __ __| |           |  /_) |     ___|             |           |\n\
 #define PRODUCT_CODE_PATH "/sys/firmware/devicetree/base/inmusic,product-code"
 
 // Send and destination Ids for midi messages
-enum FromToMidiIds  {  MPC_PRIVATE, CTRL_MPC, MPC_EXTCTRL, CTRL_EXT };
+enum FromToMidiIds  {  MPC_PRIVATE, MPC_PUBLIC,CTRL_MPC, MPC_EXTCTRL, CTRL_EXT };
 
 // Device info block typedef
 typedef struct {
@@ -74,7 +76,7 @@ typedef struct {
     int cli;
     int portPriv;
     int portPub;
-  } Mpc ;
+  } MpcHW ;
 
   // Tkgl virtual ports exposing MPC rawmidi app ports
   // Port is always 0
@@ -82,7 +84,7 @@ typedef struct {
     int cliPrivOut;
     int cliPrivIn;
     int cliPubOut;
-  } Virt;
+  } VirtRaw;
 
   // External midi controller
   struct {
@@ -92,19 +94,22 @@ typedef struct {
   } Ctrl;
 
   // MPC application External midi controller mirroring port
+  // MPC apps needs different IN and OUT port #
+  // Connection to portAppCtrl
   struct {
     int cli;
-    int port;
+    int portIn;
+    int portOut;
   } MPCCtrl;
 
   // Router ports. Mirror of physical/app ports
   int cli;
-  int portPriv;
-  int portCtrl;
-  int portPub;
-  int portMpcPriv;
-  int portMpcPub;
-  int portMpcCtrl;
+  int portPriv; // Raw
+  int portPub; // Raw
+  int portAppCtrl; // MPC App to ctrl
+  int portCtrl; // Hardware
+  int portMpcPriv; // Hardware
+  int portMpcPub;  // Hardware
 
   // Alsa sequencer and parser
   snd_seq_t *seq;
@@ -129,5 +134,7 @@ const static DeviceInfo_t DeviceInfoBloc[] = {
 
 // Function prototypes ---------------------------------------------------------
 
-static void ShowBufferHexDump(const uint8_t* data, ssize_t sz, uint8_t nl);
+void ShowBufferHexDump(const uint8_t* data, ssize_t sz, uint8_t nl);
+int match(const char *string, const char *pattern);
+void dump_event(const snd_seq_event_t *ev);
 int SeqSendRawMidi(snd_seq_t *seqHandle, uint8_t port,  const uint8_t *buffer, size_t size ) ;
