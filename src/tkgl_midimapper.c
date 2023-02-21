@@ -104,7 +104,7 @@ static uint8_t rawMidiDumpFlag = 0 ;     // Before transformation
 static uint8_t rawMidiDumpPostFlag = 0 ; // After our tranformation
 
 // Midi transformation dynamic library
-static ssize_t (*MidiMapper) ( uint8_t sender, snd_seq_event_t *ev );
+static bool (*MidiMapper) ( uint8_t sender, snd_seq_event_t *ev, const uint8_t *buffer, ssize_t size );
 static void (*MidiMapperStart) () ;
 static void (*MidiMapperSetup) () ;
 static void *midiMapperLibHandle = NULL ;
@@ -118,20 +118,25 @@ static char mpc_midi_private_alsa_name[20];
 static char mpc_midi_public_alsa_name[20];
 
 // Our midi controller port name
-static char anyctrl_name[128] ;
-static int anyctrl_midiport = -1; // port to capture. Zero by default.
-
+//static char ctrl_midi_alsa_name[20];
+//static char anyctrl_name[128] ;
+//static int anyctrl_midiport = -1; // port to capture. Zero by default.
+static char ctrl_cli_name[128] ;
+static char ctrl_port_name[128] ;
+static char ctrl_router_port_name[128] ;
 
 // Virtual rawmidi pointers to fake the MPC app
 static snd_rawmidi_t *rawvirt_inpriv  = NULL;
 static snd_rawmidi_t *rawvirt_outpriv = NULL ;
-static snd_rawmidi_t *rawvirt_outpub  = NULL ;
+//static snd_rawmidi_t *rawvirt_outpub  = NULL ;
+
+snd_rawmidi_t *raw_outpub  = NULL ;
 
 // Alsa API hooks declaration
 static typeof(&snd_rawmidi_open) orig_snd_rawmidi_open;
 static typeof(&snd_rawmidi_close) orig_snd_rawmidi_close;
 static typeof(&snd_rawmidi_read) orig_snd_rawmidi_read;
-static typeof(&snd_rawmidi_write) orig_snd_rawmidi_write;
+typeof(&snd_rawmidi_write) orig_snd_rawmidi_write;
 static typeof(&snd_seq_create_simple_port) orig_snd_seq_create_simple_port;
 static typeof(&snd_midi_event_decode) orig_snd_midi_event_decode;
 static typeof(&snd_seq_open) orig_snd_seq_open;
@@ -179,6 +184,51 @@ int GetCardFromShortName(const char *pattern) {
    }
 
    return -1;
+}
+
+
+
+///////////////////////////////////////////////////////////////////////////////
+// Get an ALSA sequencer client + port name
+///////////////////////////////////////////////////////////////////////////////
+// Will return 0 if found,.  if trueName or card are NULL, they are ignored.
+int GetSeqClientPortName(int clientId, int portId, char cli_name[], char port_name[] ) {
+
+  int c= -1;
+
+	snd_seq_t *seq;
+	if (snd_seq_open(&seq, "default", SND_SEQ_OPEN_DUPLEX, 0) < 0) {
+		tklog_error("Impossible to open default seq (GetSeqClientFromPortName).\n");
+		return -1;
+	}
+
+	snd_seq_client_info_t *cinfo;
+	snd_seq_port_info_t *pinfo;
+
+	snd_seq_client_info_alloca(&cinfo);
+	snd_seq_port_info_alloca(&pinfo);
+	snd_seq_client_info_set_client(cinfo, -1);
+	while (snd_seq_query_next_client(seq, cinfo) >= 0) {
+
+    if ( snd_seq_client_info_get_client(cinfo) != clientId ) continue;
+    strcpy(cli_name,snd_seq_client_info_get_name(cinfo) );
+
+		/* reset query info */
+		snd_seq_port_info_set_client(pinfo, snd_seq_client_info_get_client(cinfo));
+		snd_seq_port_info_set_port(pinfo, -1);
+
+    while (snd_seq_query_next_port(seq, pinfo) >= 0) {
+
+			//sprintf(port_name,"%s %s",snd_seq_client_info_get_name(cinfo),snd_seq_port_info_get_name(pinfo));
+      if ( snd_seq_port_info_get_port(pinfo) == portId) {
+        strcpy(port_name,snd_seq_port_info_get_name(pinfo) );
+        snd_seq_close(seq);
+        return 0 ;
+			}
+		}
+	}
+	snd_seq_close(seq);
+	return  -1;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -267,8 +317,8 @@ int GetSeqClientLast() {
 ///////////////////////////////////////////////////////////////////////////////
 // ALSA aconnect utility API equivalent
 ///////////////////////////////////////////////////////////////////////////////
-int aconnect(int src_client, int src_port, int dest_client, int dest_port) {
-	int queue = 0, convert_time = 0, convert_real = 0, exclusive = 0;
+int aconnect(int src_client, int src_port, int dest_client, int dest_port, int exclusive) {
+	int queue = 0, convert_time = 0, convert_real = 0; //, exclusive = 0;
 	snd_seq_port_subscribe_t *subs;
 	snd_seq_addr_t sender, dest;
 	int client;
@@ -631,13 +681,13 @@ int GetSeqPortFromDestinationId(uint8_t destId ) {
   switch (destId) {
 
     // Event to public MPC hardware
-    case TO_CTRL_MPC_PUBLIC:
-        return TkRouter.portMpcPub;
-        break;
+    // case TO_CTRL_MPC_PUBLIC:
+    //     return TkRouter.portMpcPub;
+    //     break;
 
     // Event to private MPC hardware
     case TO_CTRL_MPC_PRIVATE:
-        return TkRouter.portMpcPub;
+        return TkRouter.portMpcPriv;
         break;
 
     // Event to private raw midi MPC software port
@@ -690,7 +740,7 @@ void threadMidiProcessAndRoute() {
     // -----------------------------------------------------------------------
     if ( ev->source.client == TkRouter.MpcHW.cli ) {
         SetMidiEventDestination(ev, TO_MPC_PRIVATE );
-        if ( midiMapperLibHandle ) send = MidiMapper( FROM_CTRL_MPC, ev );
+        if ( midiMapperLibHandle ) send = MidiMapper( FROM_CTRL_MPC, ev, 0, 0 );
     }
 
     // -----------------------------------------------------------------------
@@ -698,34 +748,34 @@ void threadMidiProcessAndRoute() {
     // -----------------------------------------------------------------------
 
     // APP Writes to PUBLIC PORT (used for SYSEX)
-    else
-    if ( ev->source.client == TkRouter.VirtRaw.cliPubOut ) {
-        ev->flags |= SND_SEQ_PRIORITY_HIGH; // Because of sysex
-        SetMidiEventDestination(ev, TO_CTRL_MPC_PUBLIC );
-        if ( midiMapperLibHandle ) send = MidiMapper( FROM_MPC_PUBLIC, ev );
-    }
+    // else
+    // if ( ev->source.client == TkRouter.VirtRaw.cliPubOut ) {
+    //     ev->flags |= SND_SEQ_PRIORITY_HIGH; // Because of sysex
+    //     SetMidiEventDestination(ev, TO_CTRL_MPC_PUBLIC );
+    //     if ( midiMapperLibHandle ) send = MidiMapper( FROM_MPC_PUBLIC, ev );
+    // }
 
     // APP Writes to Private PORT
     else
     if ( ev->source.client == TkRouter.VirtRaw.cliPrivOut ) {
         SetMidiEventDestination(ev, TO_CTRL_MPC_PRIVATE );
-        if ( midiMapperLibHandle ) send = MidiMapper( FROM_MPC_PRIVATE, ev );
+        if ( midiMapperLibHandle ) send = MidiMapper( FROM_MPC_PRIVATE, ev ,0 ,0);
     }
 
     // APP Writes to port mirroring external controller
     else
     if ( ev->source.client == TkRouter.MPCCtrl.cli && ev->source.port == TkRouter.MPCCtrl.portOut) {
         SetMidiEventDestination(ev, TO_CTRL_EXT );
-        if ( midiMapperLibHandle ) send = MidiMapper( FROM_MPC_EXTCTRL, ev );
+        if ( midiMapperLibHandle ) send = MidiMapper( FROM_MPC_EXTCTRL, ev,0,0 );
     }
 
     // -----------------------------------------------------------------------
     // Events from external controller
     // -----------------------------------------------------------------------
     else
-    if ( ev->source.client == TkRouter.Ctrl.cli && ev->source.port == TkRouter.Ctrl.port) {
+    if ( ev->source.client == TkRouter.Ctrl.cli ) { // && ev->source.port == TkRouter.Ctrl.port
         SetMidiEventDestination(ev, TO_MPC_EXTCTRL );
-        if ( midiMapperLibHandle ) send = MidiMapper( FROM_CTRL_EXT, ev );
+        if ( midiMapperLibHandle ) send = MidiMapper( FROM_CTRL_EXT, ev ,0 ,0 );
     }
 
     if ( rawMidiDumpPostFlag  ) {
@@ -737,7 +787,9 @@ void threadMidiProcessAndRoute() {
       }
     }
 
-    if (send) snd_seq_event_output(TkRouter.seq, ev);
+    if (send) {
+      snd_seq_event_output(TkRouter.seq, ev);
+    }
     snd_seq_drain_output(TkRouter.seq);
 
   }
@@ -793,12 +845,11 @@ int  CreateSimplePort(snd_seq_t *seq, const char* name ) {
 void ShowHelp(void) {
 
   tklog_info("\n") ;
-  tklog_info("--tgkl_help                : Show this help\n") ;
-  tklog_info("--tkgl_ctrlname=<name>     : Use external controller containing <name>\n") ;
-  tklog_info("--tkgl_ctrlmidiport=<#>    : External midi port number to capture (0 if not provided)\n") ;
-  tklog_info("--tkgl_mididump            : Dump original raw midi flow\n") ;
-  tklog_info("--tkgl_mididumpPost        : Dump raw midi flow after transformation\n") ;
-  tklog_info("--tkgl_midilib=<file name> : Use dynamic library <file name> to transform & route midi events\n") ;
+  tklog_info("--tk-help                     : Show this help\n") ;
+  tklog_info("--tk-port=<cli:port>          : Alsa sequence client::port. Use aconnect -l to find your controller port.\n") ;
+  tklog_info("--tk-plg=<plugin file name>   : Use plugin <file name> to transform & route midi events\n") ;
+  tklog_info("--tk-dump                     : Dump original raw midi flow\n") ;
+  tklog_info("--tk-dumpP                    : Dump raw midi flow after transformation\n") ;
   tklog_info("\n") ;
   exit(0);
 }
@@ -881,36 +932,44 @@ static void tkgl_init()
 	tklog_info("MPC controller Private hardware port Alsa name is %s. Sequencer id is %d:%d.\n",mpc_midi_private_alsa_name,TkRouter.MpcHW.cli,TkRouter.MpcHW.portPriv);
 	tklog_info("MPC controller Public  hardware port Alsa name is %s. Sequencer id is %d:%d.\n",mpc_midi_public_alsa_name,TkRouter.MpcHW.cli,TkRouter.MpcHW.portPub);
 
-
+  if ( TkRouter.Ctrl.cli >= 0 ) {
+    if ( GetSeqClientPortName(TkRouter.Ctrl.cli,TkRouter.Ctrl.port,ctrl_cli_name,ctrl_port_name) == 0   ) {
+      tklog_info("External midi controller name is %s %s on port (%d:%d).\n",ctrl_cli_name,ctrl_port_name,TkRouter.Ctrl.cli,TkRouter.Ctrl.port);
+    }
+    else tklog_error("External midi controller name not found for port (%d:%d).\n",TkRouter.Ctrl.cli,TkRouter.Ctrl.port);
+  }
 
 	// Get our controller seq  port client
-	if ( strlen(anyctrl_name) > 0 ) {
-
-		// Initialize card id for public and private
-    if (  GetSeqClientFromPortName(anyctrl_name,anyctrl_name,&TkRouter.Ctrl.card,&TkRouter.Ctrl.cli,&TkRouter.Ctrl.port) < 0 ) {
-      tklog_error("Error : %s controller card/seq client not found. Parameter ignored.\n",anyctrl_name);
-      anyctrl_name[0] = 0; TkRouter.Ctrl.cli = -1;
-    }
-    else {
-       if ( anyctrl_midiport >=0 ) TkRouter.Ctrl.port = anyctrl_midiport;
-       tklog_info("%s controller hardware port Alsa name is hw:%d,0,%d. Sequencer id is %d:%d.\n",anyctrl_name,TkRouter.Ctrl.card,TkRouter.Ctrl.port,TkRouter.Ctrl.cli,TkRouter.Ctrl.port);
-    }
-	}
+	// if ( strlen(anyctrl_name) > 0 ) {
+  //
+	// 	// Initialize card id for our ctrl
+  //   if (  GetSeqClientFromPortName(anyctrl_name,anyctrl_name,&TkRouter.Ctrl.card,&TkRouter.Ctrl.cli,&TkRouter.Ctrl.port) < 0 ) {
+  //     tklog_error("Error : %s controller card/seq client not found. Parameter ignored.\n",anyctrl_name);
+  //     anyctrl_name[0] = 0; TkRouter.Ctrl.cli = -1;
+  //   }
+  //   else {
+  //      if ( anyctrl_midiport >=0 ) TkRouter.Ctrl.port = anyctrl_midiport;
+  //      sprintf(ctrl_midi_alsa_name,"hw:%d,0,%d",TkRouter.Ctrl.card,TkRouter.Ctrl.port);
+  //      tklog_info("%s controller hardware port Alsa name is %s. Sequencer id is %d:%d.\n",anyctrl_name,ctrl_midi_alsa_name,TkRouter.Ctrl.cli,TkRouter.Ctrl.port);
+  //   }
+	// }
 
 	// Create 3 virtuals rawmidi ports : Private I/O, Public O that will expose rawmidi internal ports
   // The port is always 0. This is the standard behaviour of Alsa virtual rawmidi.
   TkRouter.VirtRaw.cliPrivIn  = snd_rawmidi_open(&rawvirt_inpriv, NULL,  "[virtual]Virt MPC Rawmidi In Private", 2);
   TkRouter.VirtRaw.cliPrivOut = snd_rawmidi_open(NULL, &rawvirt_outpriv, "[virtual]Virt MPC Rawmidi Out Private", 3);
-  TkRouter.VirtRaw.cliPubOut  = snd_rawmidi_open(NULL, &rawvirt_outpub,  "[virtual]Virt MPC Rawmidi Out Public", 3);
+  //TkRouter.VirtRaw.cliPubOut  = snd_rawmidi_open(NULL, &rawvirt_outpub,  "[virtual]Virt MPC Rawmidi Out Public", 3);
 
-	if ( TkRouter.VirtRaw.cliPrivIn < 0 || TkRouter.VirtRaw.cliPrivOut < 0 || TkRouter.VirtRaw.cliPubOut < 0 ) {
+
+	//if ( TkRouter.VirtRaw.cliPrivIn < 0 || TkRouter.VirtRaw.cliPrivOut < 0 || TkRouter.VirtRaw.cliPubOut < 0 ) {
+  if ( TkRouter.VirtRaw.cliPrivIn < 0 || TkRouter.VirtRaw.cliPrivOut < 0  ) {
 		tklog_fatal("Impossible to create one or many virtual rawmidi ports\n");
 		exit(1);
 	}
 
   tklog_info("Virtual rawmidi private input port %d:0  created.\n",TkRouter.VirtRaw.cliPrivIn);
 	tklog_info("Virtual rawmidi private output port %d:0 created.\n",TkRouter.VirtRaw.cliPrivOut);
-	tklog_info("Virtual rawmidi public output port %d:0 created.\n",TkRouter.VirtRaw.cliPubOut);
+	//tklog_info("Virtual rawmidi public output port %d:0 created.\n",TkRouter.VirtRaw.cliPubOut);
 
   // Create Router Private and public port for external access with alsa sequencer
   // This will allow to process all midi flow with Alsa sequencer within the Router thread
@@ -928,13 +987,23 @@ static void tkgl_init()
   // Create router  ports
   TkRouter.portPriv    = CreateSimplePort(TkRouter.seq, "Priv Private" );
   TkRouter.portCtrl    = CreateSimplePort(TkRouter.seq, "Ctrl Private" );
-  TkRouter.portPub     = CreateSimplePort(TkRouter.seq, "Pub Private" );
+  //TkRouter.portPub     = CreateSimplePort(TkRouter.seq, "Pub Private" );
   TkRouter.portMpcPriv = CreateSimplePort(TkRouter.seq, "Mpc Priv Private" );
-  TkRouter.portMpcPub  = CreateSimplePort(TkRouter.seq, "Mpc Pub Private" );
+  //TkRouter.portMpcPub  = CreateSimplePort(TkRouter.seq, "Mpc Pub Private" );
 
   // Alsa connections I/O to that port will be done by the MPC app automatically
-  if ( TkRouter.Ctrl.cli >= 0 ) TkRouter.portAppCtrl = CreateSimplePort(TkRouter.seq, ROUTER_CTRL_PORT_NAME );
+  if ( TkRouter.Ctrl.cli >= 0 ) {
 
+    strcpy(ctrl_router_port_name, "_");
+
+    if ( strlen(ctrl_port_name) > 0) {
+      strcat(ctrl_router_port_name, ctrl_port_name);
+    } else {
+      strcat(ctrl_router_port_name,ROUTER_CTRL_PORT_NAME);
+    }
+    TkRouter.portAppCtrl = CreateSimplePort(TkRouter.seq, ctrl_router_port_name );
+
+  }
   tklog_info("Midi Router created as client %d.\n",TkRouter.cli);
 
   // Router ports connections
@@ -947,25 +1016,25 @@ static void tkgl_init()
  //           - OUT ------------------>IN HW PRIV
 
   // Private HW Out to Router Private
-  if ( aconnect(	TkRouter.MpcHW.cli,TkRouter.MpcHW.portPriv , TkRouter.cli,TkRouter.portMpcPriv) < 0 ) {
+  if ( aconnect(	TkRouter.MpcHW.cli,TkRouter.MpcHW.portPriv , TkRouter.cli,TkRouter.portMpcPriv,0) < 0 ) {
    tklog_fatal("Alsa error while connecting private MPC harware to router.\n");
    exit(1);
   }
   tklog_info("MPC hardware Private Out (%d:%d) connected to Router Hw Private IN (%d:%d).\n",TkRouter.MpcHW.cli,TkRouter.MpcHW.portPriv , TkRouter.cli,TkRouter.portPriv);
 
   // Router Private Out to MPC harware Private
-  if ( aconnect(	TkRouter.cli,TkRouter.portMpcPriv, TkRouter.MpcHW.cli,TkRouter.MpcHW.portPriv  ) < 0 ) {
+  if ( aconnect(	TkRouter.cli,TkRouter.portMpcPriv, TkRouter.MpcHW.cli,TkRouter.MpcHW.portPriv,0  ) < 0 ) {
    tklog_fatal("Alsa error while connecting router to private MPC hardware.\n");
    exit(1);
   }
   tklog_info("Router HW Private Out (%d:%d) connected to MPC hardware Private In (%d:%d).\n",TkRouter.cli,TkRouter.portMpcPriv, TkRouter.MpcHW.cli,TkRouter.MpcHW.portPriv );
 
   // Router Public Out to MPC hardware Public
-  if ( aconnect(	TkRouter.cli,TkRouter.portMpcPub, TkRouter.MpcHW.cli,TkRouter.MpcHW.portPub  ) < 0 ) {
-   tklog_fatal("Alsa error while connecting router to public MPC hardware.\n");
-   exit(1);
-  }
-  tklog_info("Router HW Public Out (%d:%d) connected to MPC hardware Public In (%d:%d).\n",TkRouter.cli,TkRouter.portMpcPub, TkRouter.MpcHW.cli,TkRouter.MpcHW.portPub );
+  // if ( aconnect(	TkRouter.cli,TkRouter.portMpcPub, TkRouter.MpcHW.cli,TkRouter.MpcHW.portPub  ) < 0 ) {
+  //  tklog_fatal("Alsa error while connecting router to public MPC hardware.\n");
+  //  exit(1);
+  // }
+  // tklog_info("Router HW Public Out (%d:%d) connected to MPC hardware Public In (%d:%d).\n",TkRouter.cli,TkRouter.portMpcPub, TkRouter.MpcHW.cli,TkRouter.MpcHW.portPub );
 
 
   // MPC APPLICATION PORTS connections
@@ -979,7 +1048,7 @@ static void tkgl_init()
 
   // MPC application private to private mpc app router rawmidi
 
-  if ( aconnect(	TkRouter.VirtRaw.cliPrivOut,0,TkRouter.cli,TkRouter.portPriv ) < 0 ) {
+  if ( aconnect(	TkRouter.VirtRaw.cliPrivOut,0,TkRouter.cli,TkRouter.portPriv, 0 ) < 0 ) {
    tklog_fatal("Alsa error while connecting MPC virtual rawmidi private port to router.\n");
    exit(1);
   }
@@ -987,18 +1056,18 @@ static void tkgl_init()
 
   // Router private mpc to MPC private app rawmidi
 
-  if ( aconnect(	TkRouter.cli,TkRouter.portPriv, TkRouter.VirtRaw.cliPrivIn, 0 ) < 0 ) {
+  if ( aconnect(	TkRouter.cli,TkRouter.portPriv, TkRouter.VirtRaw.cliPrivIn, 0, 0 ) < 0 ) {
    tklog_fatal("Alsa error while connecting router private port to MPC virtual rawmidi private.\n");
    exit(1);
   }
   tklog_info("Router MPC app Private out (%d:%d) connected to MPC App virtual rawmidi private IN (%d:%d).\n",	TkRouter.cli,TkRouter.portPriv, TkRouter.VirtRaw.cliPrivIn,0 );
 
   // MPC application public to public mpc app router
-  if ( aconnect(	TkRouter.VirtRaw.cliPubOut,0,TkRouter.cli,TkRouter.portPub ) < 0 ) {
-   tklog_fatal("Alsa error while connecting MPC virtual rawmidi public port to router.\n");
-   exit(1);
-  }
-  tklog_info("MPC App virtual rawmidi public Out (%d:%d) connected to Router MPC app Public in (%d:%d).\n",TkRouter.VirtRaw.cliPubOut,0,TkRouter.cli,TkRouter.portPub );
+  // if ( aconnect(	TkRouter.VirtRaw.cliPubOut,0,TkRouter.cli,TkRouter.portPub ) < 0 ) {
+  //  tklog_fatal("Alsa error while connecting MPC virtual rawmidi public port to router.\n");
+  //  exit(1);
+  // }
+  // tklog_info("MPC App virtual rawmidi public Out (%d:%d) connected to Router MPC app Public in (%d:%d).\n",TkRouter.VirtRaw.cliPubOut,0,TkRouter.cli,TkRouter.portPub );
 
   // Our controller hardware PORTS connections
   //   EXT CONTROLLER                      ROUTER
@@ -1008,13 +1077,13 @@ static void tkgl_init()
 	// Connect our controller if used
 	if (TkRouter.Ctrl.cli >= 0) {
 
-    if ( aconnect(	TkRouter.Ctrl.cli, TkRouter.Ctrl.port, TkRouter.cli,TkRouter.portCtrl) < 0 ) {
+    if ( aconnect(	TkRouter.Ctrl.cli, TkRouter.Ctrl.port, TkRouter.cli,TkRouter.portCtrl, 0) < 0 ) {
      tklog_fatal("Alsa error while connecting external controller to router.\n");
      exit(1);
     }
     tklog_info("Ext controller port (%d:%d) connected to Router controller port in (%d:%d).\n",TkRouter.Ctrl.cli, TkRouter.Ctrl.port, TkRouter.cli,TkRouter.portCtrl );
 
-    if ( aconnect( TkRouter.cli,TkRouter.portCtrl,	TkRouter.Ctrl.cli, TkRouter.Ctrl.port) < 0 ) {
+    if ( aconnect( TkRouter.cli,TkRouter.portCtrl,	TkRouter.Ctrl.cli, TkRouter.Ctrl.port, 0) < 0 ) {
      tklog_fatal("Alsa error while connecting router to external controller.\n");
      exit(1);
     }
@@ -1088,45 +1157,52 @@ int __libc_start_main(
 
     // Scan command line
 
-    anyctrl_name[0] = 0;
+    //anyctrl_name[0] = 0;
 
     for ( int i = 1 ; i < argc ; i++ ) {
 
       // help
-      if ( ( strcmp("--tkgl_help",argv[i]) == 0 ) ) {
+      if ( ( strcmp("--tk-help",argv[i]) == 0 ) ) {
          ShowHelp();
       }
+      //else
+      // if ( ( strncmp("--tk-ctrl=",argv[i],10) == 0 ) && ( strlen(argv[i]) >10 ) ) {
+      //    strcpy(anyctrl_name,argv[i] + 10);
+      //    tklog_info("--tk-ctrl specified for %s midi controller\n",anyctrl_name) ;
+      // }
+
       else
-      if ( ( strncmp("--tkgl_ctrlname=",argv[i],16) == 0 ) && ( strlen(argv[i]) >16 ) ) {
-         strcpy(anyctrl_name,argv[i] + 16);
-         tklog_info("--tgkl_ctrlname specified for %s midi controller\n",anyctrl_name) ;
+      if ( ( strncmp("--tk-port=",argv[i],10) == 0 ) && ( strlen(argv[i]) > 10 ) ) {
+
+         char * p = strchr(argv[i] + 10,':') ;
+         if ( p == NULL || strlen( argv[i] + 10) < 3 || *(p+1) < '0' || *(p+1) > '9'  ) {
+           tklog_fatal("--tk-port specified. Bad port format. Use 'aconnect -l' command to find your controller 'client:port'.\n") ;
+           exit(1);
+         }
+         // Parse port cli:port
+         *p = 0; p++;
+
+         TkRouter.Ctrl.cli = atoi(argv[i] + 10);
+         TkRouter.Ctrl.port = atoi(p);
+         tklog_info("--tk-port specified. Midi Seq port (%d:%d) will be captured\n",TkRouter.Ctrl.cli,TkRouter.Ctrl.port) ;
       }
 
       else
-      if ( ( strncmp("--tkgl_ctrlmidiport=",argv[i],20) == 0 ) && ( strlen(argv[i]) > 20 ) ) {
-         anyctrl_midiport = atoi(argv[i] + 20);
-         if ( anyctrl_midiport < 0 || anyctrl_midiport > 15 ) {
-           tklog_info("--tkgl_ctrlmidiport specified. Unknown port %d. Port must be an integer beetween 0 and 15.\n",anyctrl_midiport) ;
-           anyctrl_midiport = -1 ;
-         } else tklog_info("--tkgl_ctrlmidiport specified. Midi port %d will be captured\n",anyctrl_midiport) ;
-      }
-
-      else
-      if ( ( strcmp("--tkgl_mididump",argv[i]) == 0 ) ) {
+      if ( ( strcmp("--tk-dump",argv[i]) == 0 ) ) {
         rawMidiDumpFlag = 1 ;
-        tklog_info("--tkgl_mididump specified : dump original raw midi message (ENTRY)\n") ;
+        tklog_info("--tk-dump specified : dump original raw midi message (ENTRY)\n") ;
       }
 
       else
-      if ( ( strcmp("--tkgl_mididumpPost",argv[i]) == 0 ) ) {
+      if ( ( strcmp("--tk-dumpP",argv[i]) == 0 ) ) {
         rawMidiDumpPostFlag = 1 ;
-        tklog_info("--tkgl_mididumpPost specified : dump raw midi message after transformation (POST)\n") ;
+        tklog_info("--tk-mididumpP specified : dump raw midi message after transformation (POST)\n") ;
       }
       else
       // Midi specific library file name
-      if ( ( strncmp("--tkgl_midilib=",argv[i],15) == 0 ) && ( strlen(argv[i]) >15 )  ) {
-        midiMapperLibFileName = argv[i] + 15 ;
-        tklog_info("--tkgl_midilib specified. File %s will be used for midi mapping\n",midiMapperLibFileName) ;
+      if ( ( strncmp("--tk-plg=",argv[i],9) == 0 ) && ( strlen(argv[i]) >9 )  ) {
+        midiMapperLibFileName = argv[i] + 9 ;
+        tklog_info("--tk-plg specified. File %s will be used for midi mapping\n",midiMapperLibFileName) ;
       }
 
     }
@@ -1151,7 +1227,7 @@ int __libc_start_main(
 
 int snd_rawmidi_open(snd_rawmidi_t **inputp, snd_rawmidi_t **outputp, const char *name, int mode)
 {
-	tklog_debug("snd_rawmidi_open name %s mode %d\n",name,mode);
+	//tklog_debug("snd_rawmidi_open name %s mode %d\n",name,mode);
 
   // Rename the virtual port as we need
   // Port Name must not be emtpy - 30 chars max
@@ -1186,18 +1262,25 @@ int snd_rawmidi_open(snd_rawmidi_t **inputp, snd_rawmidi_t **outputp, const char
 		if (inputp) *inputp = rawvirt_inpriv;
 		else if (outputp) *outputp = rawvirt_outpriv ;
 		else return -1;
-		tklog_info("%s substitution by virtual rawmidi successfull\n",name);
+		tklog_info("%s (private) substitution by virtual rawmidi successfull\n",name);
 
 		return 0;
 	}
 
 	else if ( strcmp(mpc_midi_public_alsa_name,name) == 0   ) {
 
-		if (outputp) *outputp = rawvirt_outpub;
-		else return -1;
-		tklog_info("%s substitution by virtual rawmidi successfull\n",name);
+		// if (outputp) *outputp = rawvirt_outpub;
+		// else return -1;
+		// tklog_info("%s substitution by virtual rawmidi successfull\n",name);
+    //
+		// return 0;
 
-		return 0;
+    // Save public port
+    int r = orig_snd_rawmidi_open(inputp, outputp, name, mode);
+    tklog_info("%s (public) rawmidi capture successfull\n",name);
+    raw_outpub = *outputp;
+    return r;
+
 	}
 
 	return orig_snd_rawmidi_open(inputp, outputp, name, mode);
@@ -1230,7 +1313,23 @@ ssize_t snd_rawmidi_read(snd_rawmidi_t *rawmidi, void *buffer, size_t size) {
 ///////////////////////////////////////////////////////////////////////////////
 ssize_t snd_rawmidi_write(snd_rawmidi_t *rawmidi,const void *buffer,size_t size) {
 
-  // if ( rawMidiDumpFlag ) RawMidiDump(rawmidi, 'i','w' , buffer, size);
+  // PUBLIC PORT IS USED WITH RAWMIDI DUE TO HIGHER LATENCY WITH ALSA SEQ SYSEX
+  if ( rawmidi == raw_outpub )  {
+    if ( rawMidiDumpFlag  &&  size > 0 ) {
+        tklog_trace("TKGL_Router dump -  snd_rawmidi_write (%d bytes) - From FROM_MPC_PUBLIC (RAW)\n",size);
+        ShowBufferHexDump(buffer,size,16);
+        tklog_trace("\n");
+    }
+
+    if ( midiMapperLibHandle && ! MidiMapper( FROM_MPC_PUBLIC, 0, buffer, size ) ) return 0;
+
+    if ( rawMidiDumpPostFlag  &&  size > 0 ) {
+        tklog_trace("TKGL_Router dump POST -  snd_rawmidi_write (%d bytes) - From TO_CTRL_MPC_PUBLIC (RAW)\n",size);
+        ShowBufferHexDump(buffer,size,16);
+        tklog_trace("\n");
+    }
+
+  }
 	return 	orig_snd_rawmidi_write(rawmidi, buffer, size);
 }
 
@@ -1274,7 +1373,7 @@ int snd_seq_create_simple_port	(	snd_seq_t * 	seq, const char * 	name, unsigned 
 {
 
   static int extCtrlPortCountW = 0;
-  static int extCtrlPortCountR = 0;  
+  static int extCtrlPortCountR = 0;
 
   tklog_info("Port creation : %s\n",name);
 
@@ -1323,11 +1422,10 @@ int snd_seq_create_simple_port	(	snd_seq_t * 	seq, const char * 	name, unsigned 
     }
 
     // External controller port capture  (MPC wants a direct connection to but we dont't)
-
+    // Name is client name + " " + port name
     if ( TkRouter.Ctrl.cli >= 0  ) {
 
-        // Do not create connection to our controller/port
-        if ( match(name,anyctrl_name ) )  {
+        if ( strncmp( name, ctrl_cli_name,strlen(ctrl_cli_name) ) == 0  )  {
             uint8_t cancelPort = 0;
             if ( caps & SND_SEQ_PORT_CAP_WRITE ) {
                 if ( TkRouter.Ctrl.port == extCtrlPortCountW++ ) cancelPort = 1;
@@ -1342,8 +1440,10 @@ int snd_seq_create_simple_port	(	snd_seq_t * 	seq, const char * 	name, unsigned 
             }
         }
         else
+
         // Our special MPC port to manage midi flow to external controller
-        if ( strcmp( name + strlen(ROUTER_SEQ_NAME) + 1, ROUTER_CTRL_PORT_NAME) == 0 ) {
+        if ( strcmp( name + strlen(ROUTER_SEQ_NAME) + 1, ctrl_router_port_name) == 0 ) {
+
           int r = orig_snd_seq_create_simple_port(seq,name,caps,type);
           if ( r< 0 ) return r;
           if ( caps & SND_SEQ_PORT_CAP_WRITE ) {
