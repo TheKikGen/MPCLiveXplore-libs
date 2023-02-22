@@ -372,9 +372,7 @@ int aconnect(int src_client, int src_port, int dest_client, int dest_port, int e
     tklog_error("Connection of midi port %d:%d to %d:%d failed !\n",src_client,src_port,dest_client,dest_port);
 		return -1;
 	}
-
   //tklog_info("Connection of midi port %d:%d to %d:%d successfull\n",src_client,src_port,dest_client,dest_port);
-
 
 	snd_seq_close(seq);
   return 0;
@@ -577,11 +575,7 @@ int SeqSendRawMidi(uint8_t destId,  const uint8_t *buffer, size_t size ) {
 	int err;
 
   if ( rawMidiDumpPostFlag && size > 0 ) {
-    snd_seq_client_info_t *cinfo;
-    snd_seq_client_info_alloca(&cinfo);
-    snd_seq_get_client_info (TkRouter.seq, cinfo);
-
-    tklog_trace("TKGL_Router dump POST -  SeqSendRawMidi (%d bytes) - To (%d:%d)\n",size,snd_seq_client_info_get_client(cinfo),GetSeqPortFromDestinationId(destId));
+    tklog_trace("TKGL_Router dump POST -  SeqSendRawMidi (%d bytes) - To (%d:%d)\n",size,TkRouter.cli,GetSeqPortFromDestinationId(destId));
     ShowBufferHexDump(buffer,size,16);
     tklog_trace("\n");
   }
@@ -753,7 +747,7 @@ void threadMidiProcessAndRoute() {
     // Events from external controller
     // -----------------------------------------------------------------------
     else
-    if ( ev->source.client == TkRouter.Ctrl.cli ) { // && ev->source.port == TkRouter.Ctrl.port
+    if ( ev->source.client == TkRouter.Ctrl.cli  && ev->source.port == TkRouter.Ctrl.port ) {
         SetMidiEventDestination(ev, TO_MPC_EXTCTRL );
         if ( midiMapperLibHandle ) send = MidiMapper( FROM_CTRL_EXT, ev ,0 ,0 );
     }
@@ -761,14 +755,14 @@ void threadMidiProcessAndRoute() {
     if ( rawMidiDumpPostFlag  ) {
       int s = SeqDecodeEvent(ev, MidiWkBuffer);
       if ( s > 0 ) {
-        tklog_trace("TKGL_Router dump POST -  threadMidiProcessAndRoute (%d bytes) - To (%d:%d)\n",s,ev->source.client,ev->source.port);
+        tklog_trace("TKGL_Router dump POST -  threadMidiProcessAndRoute (%d bytes) - To (%d:%d)\n",s,TkRouter.cli,ev->source.port);
         ShowBufferHexDump(MidiWkBuffer,s,16);
         tklog_trace("\n");
       }
     }
 
     if (send) {
-      snd_seq_event_output(TkRouter.seq, ev);
+        snd_seq_event_output(TkRouter.seq, ev);
     }
     snd_seq_drain_output(TkRouter.seq);
 
@@ -824,11 +818,11 @@ int  CreateSimplePort(snd_seq_t *seq, const char* name ) {
 ///////////////////////////////////////////////////////////////////////////////
 void ShowHelp(void) {
   tklog_info("\n") ;
-  tklog_info("--tk-help                     : Show this help\n") ;
-  tklog_info("--tk-port=<cli:port>          : Alsa sequence client::port. Use aconnect -l to find your controller port.\n") ;
-  tklog_info("--tk-plg=<plugin file name>   : Use plugin <file name> to transform & route midi events\n") ;
-  tklog_info("--tk-dump                     : Dump original raw midi flow\n") ;
-  tklog_info("--tk-dumpP                    : Dump raw midi flow after transformation\n") ;
+  tklog_info("--tkhelp                     : Show this help\n") ;
+  tklog_info("--tkport=<cli:port>          : Alsa sequence client::port. Use aconnect -l to find your controller port.\n") ;
+  tklog_info("--tkplg=<plugin file name>   : Use plugin <file name> to transform & route midi events\n") ;
+  tklog_info("--tkdump                     : Dump original raw midi flow\n") ;
+  tklog_info("--tkdumpP                    : Dump raw midi flow after transformation\n") ;
   tklog_info("\n") ;
   exit(0);
 }
@@ -1095,47 +1089,45 @@ int __libc_start_main(
 
     // Scan command line
 
-    //anyctrl_name[0] = 0;
-
     for ( int i = 1 ; i < argc ; i++ ) {
 
       // help
-      if ( ( strcmp("--tk-help",argv[i]) == 0 ) ) {
+      if ( ( strcmp("--tkhelp",argv[i]) == 0 ) ) {
          ShowHelp();
       }
       else
-      if ( ( strncmp("--tk-port=",argv[i],10) == 0 ) && ( strlen(argv[i]) > 10 ) ) {
+      if ( ( strncmp("--tkport=",argv[i],9) == 0 ) && ( strlen(argv[i]) > 9 ) ) {
 
-         char * p = strchr(argv[i] + 10,':') ;
-         if ( p == NULL || strlen( argv[i] + 10) < 3 || *(p+1) < '0' || *(p+1) > '9'  ) {
-           tklog_fatal("--tk-port specified. Bad port format. Use 'aconnect -l' command to find your controller 'client:port'.\n") ;
+         char * p = strchr(argv[i] + 9,':') ;
+         if ( p == NULL || strlen( argv[i] + 9) < 3 || *(p+1) < '0' || *(p+1) > '9'  ) {
+           tklog_fatal("--tkport specified. Bad port format. Use 'aconnect -l' command to find your controller 'client:port'.\n") ;
            exit(1);
          }
          // Parse port cli:port
          *p = 0; p++;
 
-         TkRouter.Ctrl.cli = atoi(argv[i] + 10);
+         TkRouter.Ctrl.cli = atoi(argv[i] + 9);
          TkRouter.Ctrl.port = atoi(p);
-         tklog_info("--tk-port specified. Midi Seq port (%d:%d) will be captured\n",TkRouter.Ctrl.cli,TkRouter.Ctrl.port) ;
+         tklog_info("--tkport specified. Midi Seq port (%d:%d) will be captured\n",TkRouter.Ctrl.cli,TkRouter.Ctrl.port) ;
       }
 
       else
-      if ( ( strcmp("--tk-dump",argv[i]) == 0 ) ) {
+      if ( ( strcmp("--tkdump",argv[i]) == 0 ) ) {
         rawMidiDumpFlag = 1 ;
-        tklog_info("--tk-dump specified : dump original raw midi message (ENTRY)\n") ;
+        tklog_info("--tkdump specified : dump original raw midi message (ENTRY)\n") ;
       }
 
       else
-      if ( ( strcmp("--tk-dumpP",argv[i]) == 0 ) ) {
+      if ( ( strcmp("--tkdumpP",argv[i]) == 0 ) ) {
         rawMidiDumpPostFlag = 1 ;
-        tklog_info("--tk-mididumpP specified : dump raw midi message after transformation (POST)\n") ;
+        tklog_info("--tk-dumpP specified : dump raw midi message after transformation (POST)\n") ;
       }
       else
 
       // Midi specific library file name
-      if ( ( strncmp("--tk-plg=",argv[i],9) == 0 ) && ( strlen(argv[i]) >9 )  ) {
-        midiMapperLibFileName = argv[i] + 9 ;
-        tklog_info("--tk-plg specified. File %s will be used for midi mapping\n",midiMapperLibFileName) ;
+      if ( ( strncmp("--tkplg=",argv[i],8) == 0 ) && ( strlen(argv[i]) > 8 )  ) {
+        midiMapperLibFileName = argv[i] + 8 ;
+        tklog_info("--tkplg specified. File %s will be used for midi mapping\n",midiMapperLibFileName) ;
       }
 
     }

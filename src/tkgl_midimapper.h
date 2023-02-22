@@ -106,7 +106,7 @@ typedef struct {
 
   // Router ports. Mirror of physical/app ports
   int cli;
-  int portPriv; // Raw
+  int portPriv; // Raw virtual
   int portPub; // Raw
   int portAppCtrl; // MPC App to ctrl
   int portCtrl; // Hardware
