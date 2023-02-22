@@ -106,8 +106,11 @@ pthread_t    MidiRouterThread;
 static uint8_t rawMidiDumpFlag = 0 ;     // Before transformation
 static uint8_t rawMidiDumpPostFlag = 0 ; // After our tranformation
 
+
 // Config file name
 static char *configFileName = NULL;
+static uint8_t doMappingFlag = 0 ; // 1 if we have a valid mapping
+
 
 // Buttons and controls Mapping tables
 // SHIFT values have bit 7 set
@@ -370,6 +373,8 @@ static void LoadMappingFromConfFile(const char * confFileName) {
     tklog_error("Configuration file %s read error.\n", confFileName);
     return ;
   }
+
+  doMappingFlag = 1;
 
   tklog_info("  %d keys found in section %s . \n",keysCount,btLedMapSectionName);
 
@@ -680,7 +685,7 @@ int GetSeqClientFromPortName(const char * pattern, char trueName[], int *card, i
 	}
 
 	snd_seq_close(seq);
-	return  -r;
+	return  r;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -771,19 +776,20 @@ int aconnect(int src_client, int src_port, int dest_client, int dest_port) {
 	if (snd_seq_get_port_subscription(seq, subs) == 0) {
 		snd_seq_close(seq);
     tklog_info("Connection of midi port %d:%d to %d:%d already subscribed\n",src_client,src_port,dest_client,dest_port);
-		return 0;
+		return -1;
 	}
 
   if (snd_seq_subscribe_port(seq, subs) < 0) {
 		snd_seq_close(seq);
     tklog_error("Connection of midi port %d:%d to %d:%d failed !\n",src_client,src_port,dest_client,dest_port);
-		return 1;
+		return -1;
 	}
 
   tklog_info("Connection of midi port %d:%d to %d:%d successfull\n",src_client,src_port,dest_client,dest_port);
 
 
 	snd_seq_close(seq);
+  return 0;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -1022,7 +1028,7 @@ int SeqSendRawMidi(snd_seq_t *seqHandle, uint8_t port,  const uint8_t *buffer, s
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-// Alsa SEQ : get an event as raw mdii data
+// Alsa SEQ : get an event as raw midi data
 ///////////////////////////////////////////////////////////////////////////////
 ssize_t SeqReadEventRawMidi(snd_seq_event_t *ev,void *buffer, size_t size) {
 
@@ -1058,8 +1064,9 @@ ssize_t SeqReadEventRawMidi(snd_seq_event_t *ev,void *buffer, size_t size) {
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-// LaunchPad 3
+// LaunchPad Mini Mk3 Specifics
 ///////////////////////////////////////////////////////////////////////////////
+// Scroll Text
 void ControllerScrollText(TkRouter_t *rp,const char *message,uint8_t loop, uint8_t speed, uint32_t rgbColor) {
   uint8_t buffer[128];
   uint8_t *pbuff = buffer;
@@ -1084,6 +1091,7 @@ void ControllerScrollText(TkRouter_t *rp,const char *message,uint8_t loop, uint8
 
 }
 
+// RGB Colors
 void ControllerSetPadColorRGB(TkRouter_t *rp,uint8_t padCt, uint8_t r, uint8_t g, uint8_t b) {
 
   // 0xF0, 0x00, 0x20, 0x29, 0x02, 0x0D, 0x03, 0x03 (Led Index) ( r) (g)  (b)
@@ -1095,6 +1103,7 @@ void ControllerSetPadColorRGB(TkRouter_t *rp,uint8_t padCt, uint8_t r, uint8_t g
   SeqSendRawMidi(rp->seq, rp->portCtrl,SX_LPMK3_LED_RGB_COLOR,sizeof(SX_LPMK3_LED_RGB_COLOR));
 }
 
+// Mk3 init
 int ControllerInitialize(TkRouter_t *rp) {
 
   SeqSendRawMidi(rp->seq, rp->portCtrl,  SX_LPMK3_STDL_MODE, sizeof(SX_LPMK3_STDL_MODE) );
@@ -1154,21 +1163,44 @@ void threadMidiProcessAndRoute(TkRouter_t *rp) {
           case SND_SEQ_EVENT_CONTROLLER:
             // Button Led
             if ( ev->data.control.channel == 0 ) {
-              r = AllMpc_MapLedToDevice( rp, buffer,size,sizeof(buffer) );
+
+              if ( doMappingFlag ) {
+                // Check if we have a mapping match for external controller (Launchpad)
+                if ( rp->Ctrl.cli >= 0 ) {
+                  int mapValue = mapCtrl_ButtonsLeds_Inv[buffer[1]];
+                  if ( mapValue >= 0 ) {
+                    // Replace the value
+                    //tklog_debug("Map value found %d \n",mapValue);
+                    uint8_t buff2[3]; // Do not modify the original buffer
+                    buff2[0] = buffer[0] ;
+                    buff2[1] = mapValue;
+                    buff2[2] = buffer[2];
+                    SeqSendRawMidi(rp->seq, rp->portCtrl,  buff2, sizeof(buff2) );
+                  }
+                }
+
+                // MPC device
+                r = AllMpc_MapLedToDevice( rp, buffer,size,sizeof(buffer) );
+              }
             }
             break;
           case SND_SEQ_EVENT_SYSEX:
+
             // Akai hardware sysex (only the first event)
-            if (  buffer[0] == 0xF0 &&  memcmp(buffer,AkaiSysex,sizeof(AkaiSysex)) == 0 ) {
-                uint8_t *buff2 = buffer + sizeof(AkaiSysex);
-                buff2[0] = DeviceInfoBloc[MPC_OriginalId].sysexId;
-                buff2++;
-                // Sysex : set pad color : FN  F0 47 7F [3B] -> 65 00 04 [Pad #] [R] [G] [B] F7
-                if ( memcmp(buff2,MPCSysexPadColorFn,sizeof(MPCSysexPadColorFn)) == 0 ) {
-                    buff2 += sizeof(MPCSysexPadColorFn) ;
-                    AllMpc_MapSxPadColorToDevice(rp, buff2,size, sizeof(buffer) - (buff2 - buffer) );
-                    padsColorUpdated = true;
-                }
+            if (  memcmp(buffer ,AkaiSysex,sizeof(AkaiSysex)) == 0 ) {
+
+              // Mpc device
+              uint8_t *buff2 = buffer + sizeof(AkaiSysex);
+              buff2[0] = DeviceInfoBloc[MPC_OriginalId].sysexId;
+              buff2++;
+              // Sysex : set pad color : FN  F0 47 7F [3B] -> 65 00 04 [Pad #] [R] [G] [B] F7
+              if ( memcmp(buff2,MPCSysexPadColorFn,sizeof(MPCSysexPadColorFn)) == 0 ) {
+                  buff2 += sizeof(MPCSysexPadColorFn) ;
+
+
+                  AllMpc_MapSxPadColorToDevice(rp, buff2,size, sizeof(buffer) - (buff2 - buffer) );
+                  padsColorUpdated = true;
+              }
             }
             break;
         }
@@ -1240,10 +1272,16 @@ void threadMidiProcessAndRoute(TkRouter_t *rp) {
           case SND_SEQ_EVENT_CONTROLLER:
             // Buttons around pads
             if ( ev->data.control.channel == 0 ) {
-              tklog_info("Button Event received from external controller...\n");
-              ShowBufferHexDump(buffer,size,16);
 
-                // = AllMpc_MapEncoderFromDevice( rp, buffer,size,sizeof(buffer) );
+              // Check an eventual mapping
+              int mapValue = mapCtrl_ButtonsLeds[buffer[1]];
+              if ( mapValue >= 0 ) {
+                // Replace the value
+                //tklog_debug("Map value found %d \n",mapValue);
+                buffer[0] = 0x90 ; // Note On = button
+                buffer[1] = mapValue;
+                SeqSendRawMidi(rp->seq, rp->portPriv,  buffer, size );
+              }
             }
             break;
           case SND_SEQ_EVENT_NOTEON:
@@ -1929,6 +1967,7 @@ int AllMpc_MapLedToDevice( TkRouter_t *rp, uint8_t * buffer, ssize_t size, size_
   if ( buffer[1] == SHIFT_KEY_VALUE ) return size;
 
   // Check if we must remap...
+
   if ( map_ButtonsLeds_Inv[ buffer[1] ] >= 0 ) {
       buffer[1] = map_ButtonsLeds_Inv[ buffer[1] ];
   } else {
