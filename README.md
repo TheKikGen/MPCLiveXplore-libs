@@ -8,6 +8,14 @@
 Special libraries and code for MPC and Force devices
 NB : You need SSH images uopdate to use these libraries.
 
+### TKGL_MIDIMAPPER
+
+This LD_PRELOAD library allows you to reconfigure the keys inaccessible in midi learn like PLAY START, STOP on the MPC, or LAUNCH, MATRIX, MIXER on the Force for example. A plugin system allows to load the configuration designed for the midi device you are using. 
+
+The language used to create plugins is C, for performance reasons. So you need to have some programming knowledge, and install an ARM C compiler (this will be the subject of a later post on the wiki). For example, I created a plugin for my A800 master keyboard to launch scenes 1 to 8 from pads 1 to 8, and mapped the play, stop, rec keys to the PLAY, STOP ALL, REC keys of my Force. It's very nice to be able to control the workflow from my master keyboard.
+
+NB: you need ssh access to your MPC.
+
 ### TKGL_ANYCTRL  TKGL_ANYCTRL_LT
 
 These 2 "low-level" libraries allows you to set up any controller as a control surface to drive the MPC standalone application. 
