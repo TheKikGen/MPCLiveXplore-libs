@@ -121,19 +121,6 @@ typedef struct {
 // Internal MPC product sysex id  ( a struct may be better....)
 enum MPCIds  {  MPC_X,   MPC_LIVE,   MPC_FORCE, MPC_ONE,   MPC_LIVE_MK2, MPC_KEY_61,  MPC_XL, MPC_ONE_MK2, _END_MPCID };
 
-// Declare in the same order that enums above
-const static DeviceInfo_t DeviceInfoBloc[] = {
-  { .productCode = "ACV5",  .productCompatible = "acv5",  .hasBattery = false, .sysexId = 0x3a,  .productString = "MPC X",       .productStringShort = "X",     .qlinkKnobsCount = 16, .sysexIdReply = {0x3A,0x00,0x19,0x00,0x01,0x01,0x01} },
-  { .productCode = "ACV8",  .productCompatible = "acv8",  .hasBattery = true,  .sysexId = 0x3b,  .productString = "MPC Live",    .productStringShort = "LIVE",  .qlinkKnobsCount = 4,  .sysexIdReply = {0x3B,0x00,0x19,0x00,0x01,0x01,0x01} },
-  { .productCode = "ADA2",  .productCompatible = "ada2",  .hasBattery = false, .sysexId = 0x40,  .productString = "Force",       .productStringShort = "FORCE", .qlinkKnobsCount = 8,  .sysexIdReply = {0x40,0x00,0x19,0x00,0x00,0x04,0x03} },
-  { .productCode = "ACVA",  .productCompatible = "acva",  .hasBattery = false, .sysexId = 0x46,  .productString = "MPC One",     .productStringShort = "ONE",   .qlinkKnobsCount = 4,  .sysexIdReply = {0x46,0x00,0x19,0x00,0x01,0x01,0x01} },
-  { .productCode = "ACVB",  .productCompatible = "acvb",  .hasBattery = true,  .sysexId = 0x47,  .productString = "MPC Live 2",  .productStringShort = "LIVE2", .qlinkKnobsCount = 4,  .sysexIdReply = {0x47,0x00,0x19,0x00,0x01,0x01,0x01} },
-  { .productCode = "ACVB",  .productCompatible = "acvm",  .hasBattery = false, .sysexId = 0x4b,  .productString = "MPC Keys 61", .productStringShort = "KEY61", .qlinkKnobsCount = 4,  .sysexIdReply = {0x4B,0x00,0x19,0x00,0x01,0x01,0x01} },
-  { .productCode = "ACV5S", .productCompatible = "acv5s", .hasBattery = false, .sysexId = 0x52,  .productString = "MPC XL",      .productStringShort = "XL",    .qlinkKnobsCount = 4,  .sysexIdReply = {0x52,0x00,0x19,0x00,0x01,0x01,0x01} },
-  { .productCode = "ACVA2", .productCompatible = "acva2", .hasBattery = false, .sysexId = 0x56,  .productString = "MPC ONE 2",   .productStringShort = "ONE2",  .qlinkKnobsCount = 4,  .sysexIdReply = {0x56,0x00,0x19,0x00,0x01,0x01,0x01} },
-
-};
-
 // Function prototypes ---------------------------------------------------------
 
 void ShowBufferHexDump(const uint8_t* data, ssize_t sz, uint8_t nl);
@@ -141,4 +128,5 @@ int match(const char *string, const char *pattern);
 void dump_event(const snd_seq_event_t *ev);
 int SeqSendRawMidi( uint8_t destId,  const uint8_t *buffer, size_t size ) ;
 int SetMidiEventDestination(snd_seq_event_t *ev, uint8_t destId );
+int SendMidiEvent(snd_seq_event_t *ev );
 int GetSeqPortFromDestinationId(uint8_t destId );

@@ -111,8 +111,21 @@ static void *midiMapperLibHandle = NULL ;
 static char *midiMapperLibFileName = NULL;
 
 // MPC id
-static int MPC_Id = -1;
+int MPC_Id = -1;
+int MPC_Spoofed_Id = -1;
 
+// Declare in the same order that enums above
+const DeviceInfo_t DeviceInfoBloc[] = {
+  { .productCode = "ACV5",  .productCompatible = "acv5",  .hasBattery = false, .sysexId = 0x3a,  .productString = "MPC X",       .productStringShort = "X",     .qlinkKnobsCount = 16, .sysexIdReply = {0x3A,0x00,0x19,0x00,0x01,0x01,0x01} },
+  { .productCode = "ACV8",  .productCompatible = "acv8",  .hasBattery = true,  .sysexId = 0x3b,  .productString = "MPC Live",    .productStringShort = "LIVE",  .qlinkKnobsCount = 4,  .sysexIdReply = {0x3B,0x00,0x19,0x00,0x01,0x01,0x01} },
+  { .productCode = "ADA2",  .productCompatible = "ada2",  .hasBattery = false, .sysexId = 0x40,  .productString = "Force",       .productStringShort = "FORCE", .qlinkKnobsCount = 8,  .sysexIdReply = {0x40,0x00,0x19,0x00,0x00,0x04,0x03} },
+  { .productCode = "ACVA",  .productCompatible = "acva",  .hasBattery = false, .sysexId = 0x46,  .productString = "MPC One",     .productStringShort = "ONE",   .qlinkKnobsCount = 4,  .sysexIdReply = {0x46,0x00,0x19,0x00,0x01,0x01,0x01} },
+  { .productCode = "ACVB",  .productCompatible = "acvb",  .hasBattery = true,  .sysexId = 0x47,  .productString = "MPC Live 2",  .productStringShort = "LIVE2", .qlinkKnobsCount = 4,  .sysexIdReply = {0x47,0x00,0x19,0x00,0x01,0x01,0x01} },
+  { .productCode = "ACVM",  .productCompatible = "acvm",  .hasBattery = false, .sysexId = 0x4b,  .productString = "MPC Keys 61", .productStringShort = "KEY61", .qlinkKnobsCount = 4,  .sysexIdReply = {0x4B,0x00,0x19,0x00,0x01,0x01,0x01} },
+  { .productCode = "ACV5S", .productCompatible = "acv5s", .hasBattery = false, .sysexId = 0x52,  .productString = "MPC XL",      .productStringShort = "XL",    .qlinkKnobsCount = 8,  .sysexIdReply = {0x52,0x00,0x19,0x00,0x01,0x01,0x01} },
+  { .productCode = "ACVA2", .productCompatible = "acva2", .hasBattery = false, .sysexId = 0x56,  .productString = "MPC ONE 2",   .productStringShort = "ONE2",  .qlinkKnobsCount = 4,  .sysexIdReply = {0x56,0x00,0x19,0x00,0x01,0x01,0x01} },
+
+};
 // MPC alsa names
 static char mpc_midi_private_alsa_name[20];
 static char mpc_midi_public_alsa_name[20];
@@ -140,6 +153,23 @@ static typeof(&snd_seq_open) orig_snd_seq_open;
 static typeof(&snd_seq_close) orig_snd_seq_close;
 static typeof(&snd_seq_port_info_set_name) orig_snd_seq_port_info_set_name;
 //static typeof(&snd_seq_event_input) orig_snd_seq_event_input;
+
+// Other more generic APIs
+static typeof(&open64) orig_open64;
+static typeof(&close) orig_close;
+
+// Internal product code file handler to change on the fly when the file will be opened
+// That avoids all binding stuff in shell
+static int product_code_file_handler = -1 ;
+static int product_compatible_file_handler = -1 ;
+// Power supply file handlers
+static int pws_online_file_handler = -1 ;
+static int pws_voltage_file_handler = -1 ;
+static FILE *fpws_voltage_file_handler;
+
+static int pws_present_file_handler = -1 ;
+static int pws_status_file_handler = -1 ;
+static int pws_capacity_file_handler = -1 ;
 
 // Globals used to rename a virtual port and get the client id.  No other way...
 static int  snd_seq_virtual_port_rename_flag  = 0;
@@ -662,6 +692,16 @@ int SetMidiEventDestination(snd_seq_event_t *ev, uint8_t destId ) {
   return snd_seq_ev_set_source(ev, GetSeqPortFromDestinationId(destId) ) ;
 }
 
+
+///////////////////////////////////////////////////////////////////////////////
+// MIDI SEND SEQ EVENT
+///////////////////////////////////////////////////////////////////////////////
+int SendMidiEvent(snd_seq_event_t *ev ) {
+  if ( snd_seq_event_output(TkRouter.seq, ev) < 0 ) return -1;
+  snd_seq_drain_output(TkRouter.seq);
+  return 0;
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 // GET PORT from DESTINATION ID
 ///////////////////////////////////////////////////////////////////////////////
@@ -761,10 +801,7 @@ void threadMidiProcessAndRoute() {
       }
     }
 
-    if (send) {
-        snd_seq_event_output(TkRouter.seq, ev);
-    }
-    snd_seq_drain_output(TkRouter.seq);
+    if (send) SendMidiEvent(ev );
 
   }
 
@@ -842,6 +879,9 @@ static void makeLdHooks() {
   orig_snd_seq_open               = dlsym(RTLD_NEXT, "snd_seq_open");
   orig_snd_seq_close              = dlsym(RTLD_NEXT, "snd_seq_close");
   orig_snd_seq_port_info_set_name = dlsym(RTLD_NEXT, "snd_seq_port_info_set_name");
+  orig_open64                     = dlsym(RTLD_NEXT, "open64");
+  orig_close                      = dlsym(RTLD_NEXT, "close");
+
   //orig_snd_seq_event_input        = dlsym(RTLD_NEXT, "snd_seq_event_input");
 
 }
@@ -904,7 +944,10 @@ static void tkgl_init()
     if ( GetSeqClientPortName(TkRouter.Ctrl.cli,TkRouter.Ctrl.port,ctrl_cli_name,ctrl_port_name) == 0   ) {
       tklog_info("External midi controller name is %s %s on port (%d:%d).\n",ctrl_cli_name,ctrl_port_name,TkRouter.Ctrl.cli,TkRouter.Ctrl.port);
     }
-    else tklog_error("External midi controller name not found for port (%d:%d).\n",TkRouter.Ctrl.cli,TkRouter.Ctrl.port);
+    else {
+      tklog_error("External midi controller name not found for port (%d:%d), and will be ignored.\n",TkRouter.Ctrl.cli,TkRouter.Ctrl.port);
+      TkRouter.Ctrl.cli = TkRouter.Ctrl.port = -1;
+    }
   }
 
 	// Create 2 virtuals rawmidi ports : Private I/O. Public O is a true raw midi port.
@@ -951,6 +994,7 @@ static void tkgl_init()
     TkRouter.portAppCtrl = CreateSimplePort(TkRouter.seq, ctrl_router_port_name );
 
   }
+
   tklog_info("Midi Router created as client %d.\n",TkRouter.cli);
 
   // Router ports connections
@@ -1070,6 +1114,20 @@ int __libc_start_main(
     // Find the real __libc_start_main()...
     typeof(&__libc_start_main) orig = dlsym(RTLD_NEXT, "__libc_start_main");
 
+    // Don't go if it is not an MPC executable
+//    char binName[64];
+//    strcpy(binName,argv[0]);
+//    if ( )
+
+//    strrchr( const char * string, int searchedChar )
+
+    if ( strstr(argv[0],"MPC") == NULL )  {
+
+      tklog_info("Ignoring LD_PRELOAD for %s\n",argv[0]);
+      int r =  orig(main, argc, argv, init, fini, rtld_fini, stack_end);
+      return r;
+
+    }
     // Banner
     fprintf(stdout,"\n%s",TKGL_LOGO);
     tklog_info("---------------------------------------------------------\n");
@@ -1142,6 +1200,102 @@ int __libc_start_main(
     // ... and call main again
     return r ;
 }
+///////////////////////////////////////////////////////////////////////////////
+// close
+///////////////////////////////////////////////////////////////////////////////
+int close(int fd) {
+
+
+  if ( MPC_Spoofed_Id < 0 ) return orig_close(fd);
+
+  if ( fd == product_code_file_handler )            product_code_file_handler = -1;
+  else if ( fd == product_compatible_file_handler ) product_compatible_file_handler = -1;
+  else if ( fd == pws_online_file_handler   )       pws_online_file_handler   = -1 ;
+  else if ( fd == pws_voltage_file_handler  )       pws_voltage_file_handler  = -1 ;
+  else if ( fd == pws_present_file_handler  )       pws_present_file_handler  = -1 ;
+  else if ( fd == pws_status_file_handler   )       pws_status_file_handler   = -1 ;
+  else if ( fd == pws_capacity_file_handler )       pws_capacity_file_handler = -1 ;
+
+  return orig_close(fd);
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// fake_open : use memfd to create a fake file in memory
+///////////////////////////////////////////////////////////////////////////////
+int fake_open(const char * name, char *content, size_t contentSize) {
+  int fd = memfd_create(name, MFD_ALLOW_SEALING);
+  write(fd,content, contentSize);
+  lseek(fd, 0, SEEK_SET);
+  return fd  ;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// open64
+///////////////////////////////////////////////////////////////////////////////
+// Intercept all file opening to fake those we want to.
+
+int open64(const char *pathname, int flags,...) {
+   // If O_CREAT is used to create a file, the file access mode must be given.
+   // We do not fake the create function at all.
+
+   if ( MPC_Spoofed_Id < 0 || (flags & O_CREAT) )  {
+       va_list args;
+       va_start(args, flags);
+       int mode = va_arg(args, int);
+       va_end(args);
+      return  orig_open64(pathname, flags, mode);
+   }
+
+   // Existing file
+   // Fake files sections
+
+   // product code
+   if ( product_code_file_handler < 0 && strcmp(pathname,PRODUCT_CODE_PATH) == 0 ) {
+     // Create a fake file in memory
+     product_code_file_handler = fake_open(pathname,DeviceInfoBloc[MPC_Spoofed_Id].productCode, strlen(DeviceInfoBloc[MPC_Spoofed_Id].productCode) ) ;
+     return product_code_file_handler ;
+   }
+
+   // product compatible
+   if ( product_compatible_file_handler < 0 && strcmp(pathname,PRODUCT_COMPATIBLE_PATH) == 0 ) {
+     char buf[64];
+     sprintf(buf,PRODUCT_COMPATIBLE_STR,DeviceInfoBloc[MPC_Spoofed_Id].productCompatible);
+     product_compatible_file_handler = fake_open(pathname,buf, strlen(buf) ) ;
+     return product_compatible_file_handler ;
+   }
+
+   // Fake power supply files if necessary only (this allows battery mode)
+   if ( DeviceInfoBloc[MPC_Spoofed_Id].hasBattery != DeviceInfoBloc[MPC_Id].hasBattery   ) {
+
+     if ( pws_voltage_file_handler   < 0 && strcmp(pathname,POWER_SUPPLY_VOLTAGE_NOW_PATH) == 0 ) {
+        pws_voltage_file_handler = fake_open(pathname,POWER_SUPPLY_VOLTAGE_NOW,strlen(POWER_SUPPLY_VOLTAGE_NOW) ) ;
+        return pws_voltage_file_handler ;
+     }
+
+     if ( pws_online_file_handler   < 0 && strcmp(pathname,POWER_SUPPLY_ONLINE_PATH) == 0 ) {
+        pws_online_file_handler = fake_open(pathname,POWER_SUPPLY_ONLINE,strlen(POWER_SUPPLY_ONLINE) ) ;
+        return pws_online_file_handler ;
+     }
+
+     if ( pws_present_file_handler  < 0 && strcmp(pathname,POWER_SUPPLY_PRESENT_PATH) == 0 ) {
+       pws_present_file_handler = fake_open(pathname,POWER_SUPPLY_PRESENT,strlen(POWER_SUPPLY_PRESENT)  ) ;
+       return pws_present_file_handler ;
+     }
+
+     if ( pws_status_file_handler   < 0 && strcmp(pathname,POWER_SUPPLY_STATUS_PATH) == 0 ) {
+       pws_status_file_handler = fake_open(pathname,POWER_SUPPLY_STATUS,strlen(POWER_SUPPLY_STATUS) ) ;
+       return pws_status_file_handler ;
+     }
+
+     if ( pws_capacity_file_handler < 0 && strcmp(pathname,POWER_SUPPLY_CAPACITY_PATH) == 0 ) {
+       pws_capacity_file_handler = fake_open(pathname,POWER_SUPPLY_CAPACITY,strlen(POWER_SUPPLY_CAPACITY) ) ;
+       return pws_capacity_file_handler ;
+     }
+   }
+
+   return orig_open64(pathname, flags) ;
+}
+
 
 ///////////////////////////////////////////////////////////////////////////////
 // ALSA snd_rawmidi_open hooked
@@ -1345,6 +1499,13 @@ int snd_seq_create_simple_port	(	snd_seq_t * 	seq, const char * 	name, unsigned 
     if ( TkRouter.Ctrl.cli >= 0  ) {
 
         if ( strncmp( name, ctrl_cli_name,strlen(ctrl_cli_name) ) == 0  )  {
+
+            if ( aconnect(	TkRouter.Ctrl.cli, TkRouter.Ctrl.port, TkRouter.cli,TkRouter.portCtrl, 0)  == 0 ){
+                // We were disconnected
+                aconnect( TkRouter.cli,TkRouter.portCtrl,	TkRouter.Ctrl.cli, TkRouter.Ctrl.port, 0);
+                extCtrlPortCountW = extCtrlPortCountR = 0;
+            }
+
             uint8_t cancelPort = 0;
             if ( caps & SND_SEQ_PORT_CAP_WRITE ) {
                 if ( TkRouter.Ctrl.port == extCtrlPortCountW++ ) cancelPort = 1;
