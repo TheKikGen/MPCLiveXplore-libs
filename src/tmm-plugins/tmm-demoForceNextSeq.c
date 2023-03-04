@@ -159,7 +159,6 @@ bool MidiMapper( uint8_t sender, snd_seq_event_t *ev, uint8_t *buffer, size_t si
 
                       SetMidiEventDestination(ev,TO_MPC_PRIVATE );
                   }
-                  return true; // True = send event
               }
               break;
             }
