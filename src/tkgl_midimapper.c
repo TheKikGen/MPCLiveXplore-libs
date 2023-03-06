@@ -592,6 +592,49 @@ void dump_event(const snd_seq_event_t *ev)
 	}
 }
 
+
+// int SeqSendRawMidi(uint8_t destId,  const uint8_t *buffer, size_t size ) {
+//
+// //  uint8_t buff2[MIDI_DECODER_SIZE];
+//
+//   if ( size > MIDI_DECODER_SIZE ) {
+//     tklog_error("*** Size (%d) beyond MIDI_DECODER_SIZE (%d) while sending raw midi in SeqSendRawMidi\n",size,MIDI_DECODER_SIZE);
+//     return -1;
+//   }
+//   //tklog_debug("*** Size (%d) --  MIDI_DECODER_SIZE (%d) \n",size,MIDI_DECODER_SIZE);
+//   //ShowBufferHexDump(buffer,size,16);
+//
+//   snd_seq_event_t ev;
+//
+//   while ( snd_seq_event_output_pending(TkRouter.seq) != 0) ;
+//
+//
+//   //memcpy(buff2,buffer,size);
+//
+//   snd_seq_ev_clear(&ev);
+//   snd_seq_ev_set_subs(&ev);
+//   snd_seq_ev_set_direct(&ev);
+//   SetMidiEventDestination(&ev, destId );
+//   snd_seq_ev_set_sysex(&ev, size, buffer);
+//   int err = snd_seq_event_output (TkRouter.seq, &ev);
+//   snd_seq_drain_output(TkRouter.seq) ;
+//
+//   if (err < 0) {
+//     tklog_error("*** Error %d while sending raw midi in SeqSendRawMidi\n",err);
+//     return err;
+//   }
+//
+//
+//   //tklog_debug("*** Drain = %d \n",snd_seq_drain_output(TkRouter.seq));
+//
+//
+//   //while ( snd_seq_drain_output(TkRouter.seq) != 0) ;
+//
+//
+//   return size;
+//
+// }
+
 ///////////////////////////////////////////////////////////////////////////////
 // Alsa SEQ raw write to a seq port
 ///////////////////////////////////////////////////////////////////////////////
@@ -604,46 +647,44 @@ int SeqSendRawMidi(uint8_t destId,  const uint8_t *buffer, size_t size ) {
 	ssize_t size1;
 	int err;
 
+  // Start the MIDI parser
+  if (midiParser == NULL ) {
+    if (snd_midi_event_new(   size > MIDI_DECODER_SIZE ? size : MIDI_DECODER_SIZE, &midiParser ) < 0) {
+      tklog_error("*** Error while calling snd_midi_event_new in SeqSendRawMidi\n",err);
+      return -1 ;
+    }
+    snd_midi_event_init(midiParser);
+    snd_midi_event_no_status(midiParser,1); // No running status
+  }
+
   if ( rawMidiDumpPostFlag && size > 0 ) {
     tklog_trace("TKGL_Router dump POST -  SeqSendRawMidi (%d bytes) - To (%d:%d)\n",size,TkRouter.cli,GetSeqPortFromDestinationId(destId));
     ShowBufferHexDump(buffer,size,16);
     tklog_trace("\n");
   }
 
-  // Start the MIDI parser
-  if (midiParser == NULL ) {
-   if (snd_midi_event_new(   size > MIDI_DECODER_SIZE ? size : MIDI_DECODER_SIZE, &midiParser ) < 0) return -1 ;
-  }
-
-  snd_midi_event_init(midiParser);
-  snd_midi_event_no_status(midiParser,1); // No running status
-
-  snd_seq_ev_clear (&ev);
+  snd_midi_event_reset_encode (midiParser);
 
   while (size > 0) {
-		size1 = snd_midi_event_encode (midiParser, buffer, size, &ev);
+    snd_seq_ev_clear (&ev);
+		if (	( size1 = snd_midi_event_encode (midiParser, buffer, size, &ev) )  <= 0 ) break;
     snd_midi_event_reset_encode (midiParser);
 
-		if (size1 <= 0) break;
 		size -= size1;
 		result += size1;
 		buffer += size1;
 		if (ev.type == SND_SEQ_EVENT_NONE) continue;
+    if (ev.type == SND_SEQ_EVENT_SYSEX) {
+      //tklog_debug("SYSEX SEQ EVENT size = %d) \n",ev.data.ext.len);
+      //ShowBufferHexDump(ev.data.ext.ptr,ev.data.ext.len,16);
+    }
 
-    snd_seq_ev_set_subs (&ev);
     SetMidiEventDestination(&ev, destId );
-    //snd_seq_ev_set_source(&ev, port);
-		snd_seq_ev_set_direct (&ev);
-		err = snd_seq_event_output (TkRouter.seq, &ev);
-
-		if (err < 0) {
-			return result > 0 ? result : err;
+    if ( SendMidiEvent(&ev ) < 0 ) {
+      tklog_error("*** Error %d while sending raw midi in SeqSendRawMidi\n",err);
+			return err;
 		}
 	}
-
-	if (result > 0) {
-    snd_seq_drain_output (TkRouter.seq);
-  }
 
 	return result;
 }
@@ -697,8 +738,18 @@ int SetMidiEventDestination(snd_seq_event_t *ev, uint8_t destId ) {
 // MIDI SEND SEQ EVENT
 ///////////////////////////////////////////////////////////////////////////////
 int SendMidiEvent(snd_seq_event_t *ev ) {
-  if ( snd_seq_event_output(TkRouter.seq, ev) < 0 ) return -1;
-  snd_seq_drain_output(TkRouter.seq);
+
+  snd_seq_ev_set_subs (ev);
+  snd_seq_ev_set_direct (ev);
+
+  int err = snd_seq_event_output(TkRouter.seq, ev);
+  while ( snd_seq_drain_output (TkRouter.seq) > 0 );
+
+  if (  err < 0 ) {
+    tklog_error("Error %d while sendig midi event in SendMidiEvent.\n",err);
+    return err;
+  }
+
   return 0;
 }
 
@@ -757,9 +808,9 @@ void threadMidiProcessAndRoute() {
     }
 
     send = true ;
-    ev->flags |= SND_SEQ_PRIORITY_NORMAL;
-    snd_seq_ev_set_subs(ev);
-    snd_seq_ev_set_direct(ev);
+    //ev->flags |= SND_SEQ_PRIORITY_NORMAL;
+    //snd_seq_ev_set_subs(ev);
+    //snd_seq_ev_set_direct(ev);
 
     // -----------------------------------------------------------------------
     // Event from MPC hw device. Only private port can write
