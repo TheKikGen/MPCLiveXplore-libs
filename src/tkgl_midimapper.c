@@ -340,76 +340,6 @@ int GetSeqClientLast() {
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-// ALSA aconnect utility API equivalent
-///////////////////////////////////////////////////////////////////////////////
-int aconnect(int src_client, int src_port, int dest_client, int dest_port, int exclusive) {
-	int queue = 0, convert_time = 0, convert_real = 0; //, exclusive = 0;
-	snd_seq_port_subscribe_t *subs;
-	snd_seq_addr_t sender, dest;
-	int client;
-	char addr[10];
-
-	snd_seq_t *seq;
-	if (snd_seq_open(&seq, "default", SND_SEQ_OPEN_DUPLEX, 0) < 0) {
-		tklog_error("Impossible to open default seq\n");
-		return -1;
-	}
-
-	if ((client = snd_seq_client_id(seq)) < 0) {
-		tklog_error("Impossible to get seq client id\n");
-		snd_seq_close(seq);
-		return - 1;
-	}
-
-	/* set client info */
-	if (snd_seq_set_client_name(seq, "ALSA Connector") < 0) {
-		tklog_error("Set client name failed\n");
-		snd_seq_close(seq);
-		return -1;
-	}
-
-	/* set subscription */
-	sprintf(addr,"%d:%d",src_client,src_port);
-	if (snd_seq_parse_address(seq, &sender, addr) < 0) {
-		snd_seq_close(seq);
-		tklog_error("Invalid source address %s\n", addr);
-		return -1;
-	}
-
-	sprintf(addr,"%d:%d",dest_client,dest_port);
-	if (snd_seq_parse_address(seq, &dest, addr) < 0) {
-		snd_seq_close(seq);
-		tklog_error("Invalid destination address %s\n", addr);
-		return -1;
-	}
-
-	snd_seq_port_subscribe_alloca(&subs);
-	snd_seq_port_subscribe_set_sender(subs, &sender);
-	snd_seq_port_subscribe_set_dest(subs, &dest);
-	snd_seq_port_subscribe_set_queue(subs, queue);
-	snd_seq_port_subscribe_set_exclusive(subs, exclusive);
-	snd_seq_port_subscribe_set_time_update(subs, convert_time);
-	snd_seq_port_subscribe_set_time_real(subs, convert_real);
-
-	if (snd_seq_get_port_subscription(seq, subs) == 0) {
-		snd_seq_close(seq);
-    tklog_info("Connection of midi port %d:%d to %d:%d already subscribed\n",src_client,src_port,dest_client,dest_port);
-		return -1;
-	}
-
-  if (snd_seq_subscribe_port(seq, subs) < 0) {
-		snd_seq_close(seq);
-    tklog_error("Connection of midi port %d:%d to %d:%d failed !\n",src_client,src_port,dest_client,dest_port);
-		return -1;
-	}
-  //tklog_info("Connection of midi port %d:%d to %d:%d successfull\n",src_client,src_port,dest_client,dest_port);
-
-	snd_seq_close(seq);
-  return 0;
-
-}
-
-///////////////////////////////////////////////////////////////////////////////
 // Get MPC hardware name from sysex id
 ///////////////////////////////////////////////////////////////////////////////
 static int GetIndexOfMPC_Id(uint8_t id){
@@ -1027,6 +957,8 @@ static void tkgl_init()
   snd_seq_set_client_name(TkRouter.seq, ROUTER_SEQ_NAME);
   TkRouter.cli = snd_seq_client_id(TkRouter.seq) ;
 
+  snd_seq_set_client_pool_output	(	TkRouter.seq, TKROUTER_SEQ_POOL_OUT_SIZE);
+
   // Create router  ports
   TkRouter.portPriv    = CreateSimplePort(TkRouter.seq, "Priv Private" );
   TkRouter.portCtrl    = CreateSimplePort(TkRouter.seq, "Ctrl Private" );
@@ -1058,14 +990,14 @@ static void tkgl_init()
  //           - OUT ------------------>IN HW PRIV
 
   // Private HW Out to Router Private
-  if ( aconnect(	TkRouter.MpcHW.cli,TkRouter.MpcHW.portPriv , TkRouter.cli,TkRouter.portMpcPriv,0) < 0 ) {
+  if ( snd_seq_connect_from	(	TkRouter.seq, TkRouter.portMpcPriv, TkRouter.MpcHW.cli,TkRouter.MpcHW.portPriv ) < 0 ) {
    tklog_fatal("Alsa error while connecting private MPC harware to router.\n");
    exit(1);
   }
   tklog_info("MPC hardware Private Out (%d:%d) connected to Router Hw Private IN (%d:%d).\n",TkRouter.MpcHW.cli,TkRouter.MpcHW.portPriv , TkRouter.cli,TkRouter.portPriv);
 
   // Router Private Out to MPC harware Private
-  if ( aconnect(	TkRouter.cli,TkRouter.portMpcPriv, TkRouter.MpcHW.cli,TkRouter.MpcHW.portPriv,0  ) < 0 ) {
+  if ( snd_seq_connect_to	(	TkRouter.seq, TkRouter.portMpcPriv, TkRouter.MpcHW.cli,TkRouter.MpcHW.portPriv ) < 0 ) {
    tklog_fatal("Alsa error while connecting router to private MPC hardware.\n");
    exit(1);
   }
@@ -1081,16 +1013,14 @@ static void tkgl_init()
   //           - OUT ------------------>  IN APP PRIV
 
   // MPC application private to private mpc app router rawmidi
-
-  if ( aconnect(	TkRouter.VirtRaw.cliPrivOut,0,TkRouter.cli,TkRouter.portPriv, 0 ) < 0 ) {
+  if ( snd_seq_connect_from	(	TkRouter.seq, TkRouter.portPriv, TkRouter.VirtRaw.cliPrivOut,0 ) < 0 ) {
    tklog_fatal("Alsa error while connecting MPC virtual rawmidi private port to router.\n");
    exit(1);
   }
   tklog_info("MPC App virtual rawmidi private Out (%d:%d) connected to Router MPC app Private in (%d:%d).\n",TkRouter.VirtRaw.cliPrivOut,0,TkRouter.cli,TkRouter.portPriv );
 
   // Router private mpc to MPC private app rawmidi
-
-  if ( aconnect(	TkRouter.cli,TkRouter.portPriv, TkRouter.VirtRaw.cliPrivIn, 0, 0 ) < 0 ) {
+  if ( snd_seq_connect_to	(	TkRouter.seq, TkRouter.portPriv, TkRouter.VirtRaw.cliPrivIn,0 ) < 0 ) {
    tklog_fatal("Alsa error while connecting router private port to MPC virtual rawmidi private.\n");
    exit(1);
   }
@@ -1104,13 +1034,13 @@ static void tkgl_init()
 	// Connect our controller if used
 	if (TkRouter.Ctrl.cli >= 0) {
 
-    if ( aconnect(	TkRouter.Ctrl.cli, TkRouter.Ctrl.port, TkRouter.cli,TkRouter.portCtrl, 0) < 0 ) {
+    if ( snd_seq_connect_from	(	TkRouter.seq, TkRouter.portCtrl, TkRouter.Ctrl.cli, TkRouter.Ctrl.port) < 0 ) {
      tklog_fatal("Alsa error while connecting external controller to router.\n");
      exit(1);
     }
     tklog_info("Ext controller port (%d:%d) connected to Router controller port in (%d:%d).\n",TkRouter.Ctrl.cli, TkRouter.Ctrl.port, TkRouter.cli,TkRouter.portCtrl );
 
-    if ( aconnect( TkRouter.cli,TkRouter.portCtrl,	TkRouter.Ctrl.cli, TkRouter.Ctrl.port, 0) < 0 ) {
+    if ( snd_seq_connect_to	(	TkRouter.seq, TkRouter.portCtrl, TkRouter.Ctrl.cli, TkRouter.Ctrl.port) < 0 ) {
      tklog_fatal("Alsa error while connecting router to external controller.\n");
      exit(1);
     }
@@ -1551,9 +1481,9 @@ int snd_seq_create_simple_port	(	snd_seq_t * 	seq, const char * 	name, unsigned 
 
         if ( strncmp( name, ctrl_cli_name,strlen(ctrl_cli_name) ) == 0  )  {
 
-            if ( aconnect(	TkRouter.Ctrl.cli, TkRouter.Ctrl.port, TkRouter.cli,TkRouter.portCtrl, 0)  == 0 ){
+             if ( snd_seq_connect_from	(	TkRouter.seq, TkRouter.portCtrl, TkRouter.Ctrl.cli, TkRouter.Ctrl.port) == 0 ) {
                 // We were disconnected
-                aconnect( TkRouter.cli,TkRouter.portCtrl,	TkRouter.Ctrl.cli, TkRouter.Ctrl.port, 0);
+                snd_seq_connect_from	(	TkRouter.seq, TkRouter.portCtrl, TkRouter.Ctrl.cli, TkRouter.Ctrl.port) ;
                 extCtrlPortCountW = extCtrlPortCountR = 0;
             }
 

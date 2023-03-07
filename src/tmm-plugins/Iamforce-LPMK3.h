@@ -103,8 +103,9 @@ void ControllerScrollText(const char *message,uint8_t loop, uint8_t speed, uint3
   SeqSendRawMidi(TO_CTRL_EXT,  buffer, pbuff - buffer );
 
 }
-
-// RGB Colors
+///////////////////////////////////////////////////////////////////////////////
+// LPMMK3 Set a pad RGB Colors
+///////////////////////////////////////////////////////////////////////////////
 void ControllerSetPadColorRGB(uint8_t padCt, uint8_t r, uint8_t g, uint8_t b) {
 
   // 0xF0, 0x00, 0x20, 0x29, 0x02, 0x0D, 0x03, 0x03 (Led Index) ( r) (g)  (b)
@@ -119,36 +120,39 @@ void ControllerSetPadColorRGB(uint8_t padCt, uint8_t r, uint8_t g, uint8_t b) {
 
 }
 
-// Refresh the pad surface from Force pad cache
-void ControllerRefreshPadsFromForceCache() {
 
-    uint8_t msg[3] = {0x90, 0x00, 0x00};
+///////////////////////////////////////////////////////////////////////////////
+// Show a line from Force pad color cache
+///////////////////////////////////////////////////////////////////////////////
+void ControllerDrawPadsLineFromForceCache(uint8_t ctLine,uint8_t forceLine) {
+
+    uint8_t pf = forceLine * 8 ;
+    uint8_t pl = ctLine * 10 + 11;
+
+    for ( int i = 0  ; i <  8 ; i++) {
+
+      // Set pad for external controller eventually
+      //uint8_t padCt = ( ( 7 - i / 8 ) * 10 + 11 + i % 8 );
+      //tklog_debug("PadLine %d \n",pl);
+
+      //ControllerSetPadColorRGB(pl++,0x7F,0,0);
+      ControllerSetPadColorRGB(pl++, Force_PadColorsCache[pf].r, Force_PadColorsCache[pf].g,Force_PadColorsCache[pf].b);
+      pf++;
+    }
+}
+
+
+
+///////////////////////////////////////////////////////////////////////////////
+// Refresh the pad surface from Force pad cache
+///////////////////////////////////////////////////////////////////////////////
+void ControllerRefreshPadsFromForceCache() {
 
     for ( int i = 0 ; i< 64 ; i++) {
 
       // Set pad for external controller eventually
       uint8_t padCt = ( ( 7 - i / 8 ) * 10 + 11 + i % 8 );
-
-      msg[1] = padCt ;
-
-      //6 bits xxrgbRGB (EGA)
-      // xx xx xx
-      // xx xx 11
-
-      // 128 / 4 values
-      // R Value 00 to 11
-      uint8_t R = Force_PadColorsCache[i].r  ;
-      uint8_t G = Force_PadColorsCache[i].g  ;
-      uint8_t B = Force_PadColorsCache[i].b  ;
-
-      uint8_t c =   R  << 4 +  G << 2  + B ;
-
-      //tklog_debug("r %d  g  %d  b  %d / C =  %d \n", R,G,B,c);
-
-      msg[2] =  c;
-      SeqSendRawMidi( TO_CTRL_EXT,msg,3 );
-
-      //ControllerSetPadColorRGB(padCt, Force_PadColorsCache[i].r, Force_PadColorsCache[i].g,Force_PadColorsCache[i].b);
+      ControllerSetPadColorRGB(padCt, Force_PadColorsCache[i].r, Force_PadColorsCache[i].g,Force_PadColorsCache[i].b);
     }
 }
 
@@ -182,27 +186,17 @@ uint8_t GetForcePAdFromControllerPad(uint8_t padCt) {
 
 
 // Controller Led Mapping
-int ControllerSetMapButtonLed(snd_seq_event_t *ev) {
-
+void ControllerSetMapButtonLed(snd_seq_event_t *ev) {
 
     int mapVal = -1 ;
+    int mapVal2 = -1;
 
-    if      ( ev->data.control.param == FORCE_BT_SHIFT )      ;
-    else if ( ev->data.control.param == FORCE_BT_ENCODER )    ;
-    else if ( ev->data.control.param == FORCE_BT_MENU )       ;
-    else if ( ev->data.control.param == FORCE_BT_PLAY )       ;
-    else if ( ev->data.control.param == FORCE_BT_STOP )       ;
-    else if ( ev->data.control.param == FORCE_BT_REC )        ;
-    else if ( ev->data.control.param == FORCE_BT_MATRIX )     ;
-    else if ( ev->data.control.param == FORCE_BT_ARP )        ;
-    else if ( ev->data.control.param == FORCE_BT_COPY )       ;
-    else if ( ev->data.control.param == FORCE_BT_DELETE )     ;
-    else if ( ev->data.control.param == FORCE_BT_TAP_TEMPO )  ;
-    else if ( ev->data.control.param == FORCE_BT_SELECT )     ;
-    else if ( ev->data.control.param == FORCE_BT_EDIT )       ;
-    else if ( ev->data.control.param == FORCE_BT_UNDO )       ;
-    else if ( ev->data.control.param == FORCE_BT_STOP_ALL )   ;
-    else if ( ev->data.control.param == FORCE_BT_NOTE )       mapVal = CTRL_BT_KEYS;
+    if ( ev->data.control.param == FORCE_BT_NOTE )       mapVal = CTRL_BT_KEYS;
+    else if ( ev->data.control.param == FORCE_BT_TAP_TEMPO )  {
+          //mapVal = CTRL_BT_LOGO;
+          //mapVal2 = ev->data.control.value == 3 ?  0x1:00 ;
+          //tklog_debug("TAP LED %d \n",ev->data.control.value);
+    }
     else if ( ev->data.control.param == FORCE_BT_LAUNCH_1 )   mapVal = CTRL_BT_LAUNCH_1  ;
     else if ( ev->data.control.param == FORCE_BT_LAUNCH_2 )   mapVal = CTRL_BT_LAUNCH_2  ;
     else if ( ev->data.control.param == FORCE_BT_LAUNCH_3 )   mapVal = CTRL_BT_LAUNCH_3  ;
@@ -212,23 +206,29 @@ int ControllerSetMapButtonLed(snd_seq_event_t *ev) {
     else if ( ev->data.control.param == FORCE_BT_LAUNCH_7 )   mapVal = CTRL_BT_LAUNCH_7  ;
 
     else if ( ev->data.control.param == FORCE_BT_LAUNCH )     mapVal = CTRL_BT_SESSION ;
-    else if ( ev->data.control.param == FORCE_BT_LOAD )       ;
-    else if ( ev->data.control.param == FORCE_BT_SAVE )       ;
-    else if ( ev->data.control.param == FORCE_BT_MIXER )      ;
-    else if ( ev->data.control.param == FORCE_BT_CLIP )       ;
-    else if ( ev->data.control.param == FORCE_BT_PLUS )       ;
-    else if ( ev->data.control.param == FORCE_BT_MINUS )      ;
-    else if ( ev->data.control.param == FORCE_BT_KNOBS )      ;
 
+    else if ( ev->data.control.param == FORCE_BT_RIGHT )  mapVal = CTRL_BT_RIGHT    ;
+    else if ( ev->data.control.param == FORCE_BT_LEFT )   mapVal = CTRL_BT_LEFT   ;
+    else if ( ev->data.control.param == FORCE_BT_UP )      ;
+    else if ( ev->data.control.param == FORCE_BT_DOWN )     mapVal = CTRL_BT_DOWN ;
+
+    else if ( ev->data.control.param == FORCE_BT_SOLO )   mapVal = CTRL_BT_STOP_SM   ;
+    else if ( ev->data.control.param == FORCE_BT_MUTE )   mapVal = CTRL_BT_STOP_SM   ;
+    else if ( ev->data.control.param == FORCE_BT_CLIP_STOP )   mapVal = CTRL_BT_STOP_SM   ;
+    else if ( ev->data.control.param == FORCE_BT_REC_ARM )   mapVal = CTRL_BT_STOP_SM   ;
 
     if ( mapVal >=0 ) {
         snd_seq_event_t ev2 = *ev;
         ev2.data.control.param = mapVal;
+        if ( mapVal2 >= 0 ) ev2.data.control.value = mapVal2 ;
+        else {
+          uint8_t colMap[]={0x75,0x01,0X13,0x29,0x57};
+          ev2.data.control.value = colMap[ev->data.control.value] ;
+        }
+
         SetMidiEventDestination(&ev2, TO_CTRL_EXT );
         SendMidiEvent(&ev2 );
     }
-
-    return mapVal;
 
 }
 
@@ -249,6 +249,16 @@ bool ControllerEventReceived(snd_seq_event_t *ev) {
           // UP holded = shitfmode on the Launchpad
           CtrlShiftMode = ev->data.control.value == 0x7F ? true:false;
           //mapVal = FORCE_BT_SHIFT;
+          if ( CtrlShiftMode ) {
+            ControllerDrawPadsLineFromForceCache(0,9);
+            ControllerDrawPadsLineFromForceCache(1,8);
+          }
+
+          else {
+            ControllerDrawPadsLineFromForceCache(1,6);
+            ControllerDrawPadsLineFromForceCache(0,7);
+          }
+
           return false;
         }
         else if  ( ev->data.control.param == CTRL_BT_DOWN  ) { // v
@@ -319,19 +329,12 @@ bool ControllerEventReceived(snd_seq_event_t *ev) {
 
     case SND_SEQ_EVENT_NOTEON:
     case SND_SEQ_EVENT_NOTEOFF:
+    case SND_SEQ_EVENT_KEYPRESS:
       if ( ev->data.note.channel == 0 ) {
         ev->data.note.channel = 9;
         ev->data.note.note = GetForcePAdFromControllerPad(ev->data.note.note);
         SetMidiEventDestination(ev,TO_MPC_PRIVATE );
       }
-
-    case SND_SEQ_EVENT_CHANPRESS:
-      if ( ev->data.control.channel == 0 ) {
-        ev->data.control.channel = 9;
-        ev->data.control.param = GetForcePAdFromControllerPad(ev->data.control.param);
-        SetMidiEventDestination(ev,TO_MPC_PRIVATE );
-      }
-      break;
   }
 
   return true;

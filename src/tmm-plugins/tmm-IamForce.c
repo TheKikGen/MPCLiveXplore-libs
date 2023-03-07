@@ -125,7 +125,7 @@ IMAFORCE PLUGIN -- Force Emulation on MPC
 #define FORCE_BT_DELETE 38
 #define FORCE_BT_SHIFT 0x31
 #define FORCE_BT_SELECT 52
-#define FORCE_BT_TAP_TEMPO 53
+#define FORCE_BT_TAP_TEMPO 0x35
 #define FORCE_BT_PLUS 54
 #define FORCE_BT_MINUS 55
 #define FORCE_BT_LAUNCH_1 56
@@ -248,9 +248,32 @@ IMAFORCE PLUGIN -- Force Emulation on MPC
 #define MPC_BT_PLAY 82
 #define MPC_BT_PLAY_START 83
 
+#define MPC_PAD_1 0x25
+#define MPC_PAD_2 0x24
+#define MPC_PAD_3 0x2A
+#define MPC_PAD_4 0x52
+#define MPC_PAD_5 0x28
+#define MPC_PAD_6 0x26
+#define MPC_PAD_7 0x2E
+#define MPC_PAD_8 0x2C
+#define MPC_PAD_9 0x30
+#define MPC_PAD_10 0x2F
+#define MPC_PAD_11 0x2D
+#define MPC_PAD_12 0x2B
+#define MPC_PAD_13 0x31
+#define MPC_PAD_14 0x37
+#define MPC_PAD_15 0x33
+#define MPC_PAD_16 0x35
+
 // Mapping tables index offset
 #define MPCPADS_TABLE_IDX_OFFSET 0X24
 #define FORCEPADS_TABLE_IDX_OFFSET 0X36
+
+// Quadran OFFSETS
+#define QUADRAN_1 0
+#define QUADRAN_2 4
+#define QUADRAN_3 32
+#define QUADRAN_4 36
 
 // Rbg color struct
 typedef union
@@ -330,6 +353,26 @@ static const uint8_t MPCPadsTable[]
 MPC_PAD4 };
 // 0x52
 
+
+
+static const uint8_t MPCPadToForce[]
+  = { 25 , 24 , 17,  0xff,   16,    0xff,  26, 11,
+      19, 10, 18, 9, 8, 0, 0xff,  2,
+    0xff,   3, 0xff, 1,
+  0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,
+  0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,
+  0xff,0xff,0xff,0xff,0xff,0xff,
+  27 };
+
+static const uint8_t ForcePadToMpc[]
+  = {
+    0x31,0x37,0x33,0x35,
+    0x30,0x2F,0x2D,0x2B,
+    0x28,0x26,0x2E,0x2C,
+    0x25,0x24,0x2A,0x52,
+  };
+
+
 static const uint8_t MPCPadsTable2[]
 = {
   0x25,0x24,0x2A,0x52,
@@ -344,11 +387,11 @@ static const uint8_t MPCSysexPadColorFn[]                = {0x65,0x00,0x04};
 static const uint8_t IdentityReplySysexHeader[]   = {0xF0,0x7E,0x00,0x06,0x02,0x47};
 
 // To navigate in matrix quadran when MPC spoofing a Force
-static int MPC_PadOffsetL = 0;
-static int MPC_PadOffsetC = 0;
+static int MPCPadQuadran = QUADRAN_3;
+
 
 // Force Matrix pads color cache
-static Force_MPCPadColor_t Force_PadColorsCache[256];
+static Force_MPCPadColor_t Force_PadColorsCache[80];
 
 // SHIFT Holded mode
 // Holding shift will activate the shift mode
@@ -416,10 +459,13 @@ static int GetMPCPadIndexFromForcePadIndex(uint8_t padF) {
   uint8_t padC = padF % 8 ;
   uint8_t padM = 0x7F ;
 
+  uint8_t PadOffsetL = MPCPadQuadran / 8;
+  uint8_t PadOffsetC = MPCPadQuadran % 8;
+
   // Transpose Force pad to Mpc pad in the 4x4 current quadran
-  if ( padL >= MPC_PadOffsetL && padL < MPC_PadOffsetL + 4 ) {
-    if ( padC >= MPC_PadOffsetC  && padC < MPC_PadOffsetC + 4 ) {
-      padM = (  3 - ( padL - MPC_PadOffsetL  ) ) * 4 + ( padC - MPC_PadOffsetC)  ;
+  if ( padL >= PadOffsetL && padL < PadOffsetL + 4 ) {
+    if ( padC >= PadOffsetC  && padC < PadOffsetC + 4 ) {
+      padM = (  3 - ( padL - PadOffsetL  ) ) * 4 + ( padC - PadOffsetC)  ;
     }
   }
 
@@ -431,14 +477,7 @@ static int GetMPCPadIndexFromForcePadIndex(uint8_t padF) {
 ///////////////////////////////////////////////////////////////////////////////
 static uint8_t GetForcePadNoteFromMPCPadNote(uint8_t padNote) {
 
-uint8_t padM = MPCPadsTable[padNote - MPCPADS_TABLE_IDX_OFFSET ];
-uint8_t padL = padM / 4  ;
-uint8_t padC = padM % 4  ;
-
-// Compute the Force pad id without offset
-uint8_t padF = ( 3 - padL + MPC_PadOffsetL ) * 8 + padC + MPC_PadOffsetC ;
-
-return padF + FORCEPADS_TABLE_IDX_OFFSET;
+   return MPCPadToForce[padNote - MPCPADS_TABLE_IDX_OFFSET]  + FORCEPADS_TABLE_IDX_OFFSET + MPCPadQuadran;
 
 }
 
@@ -473,6 +512,11 @@ static void SetMPCMapButtonLed(snd_seq_event_t *ev) {
   else if ( ev->data.control.param == FORCE_BT_PLUS )       mapVal = MPC_BT_PLUS;
   else if ( ev->data.control.param == FORCE_BT_MINUS )      mapVal = MPC_BT_MINUS;
   else if ( ev->data.control.param == FORCE_BT_KNOBS )      mapVal = MPC_BT_QLINK_SELECT;
+  else if ( ev->data.control.param == FORCE_BT_MUTE )       mapVal = MPC_BT_BANK_A;
+  else if ( ev->data.control.param == FORCE_BT_ASSIGN_A )   mapVal = MPC_BT_BANK_A;
+  else if ( ev->data.control.param == FORCE_BT_ASSIGN_B )   mapVal = MPC_BT_BANK_B;
+  else if ( ev->data.control.param == FORCE_BT_SOLO     )   mapVal = MPC_BT_BANK_B;
+
 
   if ( mapVal >=0 ) {
     ev->data.control.param = mapVal;
@@ -610,7 +654,8 @@ bool MidiMapper( uint8_t sender, snd_seq_event_t *ev, uint8_t *buffer, size_t si
 
        // Akai Sysex :  F0 47 7F [id] (...) F7
 
-       while ( memcmp(&buffer[i],AkaiSysex, sizeof(AkaiSysex) ) == 0  && i < size ) {
+//       while ( ( buffer[i] == 0xF0 && buffer[i+1] == 0x47 memcmp(&buffer[i],AkaiSysex, sizeof(AkaiSysex) ) == 0  && i < size ) {
+        while ( buffer[i] == 0xF0 && buffer[i+1] == 0x47  && i < size ) {
 
           i += sizeof(AkaiSysex);
           // Change Sysed device id
@@ -640,8 +685,6 @@ bool MidiMapper( uint8_t sender, snd_seq_event_t *ev, uint8_t *buffer, size_t si
           // Reach end of sysex to loop on the next sysex command
           while ( buffer[i++] != 0xF7 ) if ( i>= size ) break;
        }
-
-       //if ( i > 0 ) ControllerRefreshPadsFromForceCache();
 
        break;
      }
@@ -674,7 +717,9 @@ bool MidiMapper( uint8_t sender, snd_seq_event_t *ev, uint8_t *buffer, size_t si
        tklog_info("Midi Event received from CTRL MPC\n");
 
        switch (ev->type ) {
+
          case SND_SEQ_EVENT_SYSEX:
+
              // Identity request reply
              if ( memcmp(ev->data.ext.ptr,IdentityReplySysexHeader,sizeof(IdentityReplySysexHeader) ) == 0 ) {
                memcpy(ev->data.ext.ptr + sizeof(IdentityReplySysexHeader),DeviceInfoBloc[MPC_FORCE].sysexIdReply, sizeof(DeviceInfoBloc[MPC_FORCE].sysexIdReply) );
@@ -693,38 +738,33 @@ bool MidiMapper( uint8_t sender, snd_seq_event_t *ev, uint8_t *buffer, size_t si
              break;
 
          case SND_SEQ_EVENT_NOTEON:
-//         case SND_SEQ_EVENT_NOTEOFF:
-
              // Buttons on channel 0
-             if ( ev->data.note.channel == 0 ) {
+             if ( ev->type == SND_SEQ_EVENT_NOTEON && ev->data.note.channel == 0 ) {
                 SetMPCMapButton(ev) ;
                 return false;
              }
+         case SND_SEQ_EVENT_NOTEOFF:
+         case SND_SEQ_EVENT_KEYPRESS:
+
              // Mpc Pads on channel 9
-             else if ( ev->data.note.channel == 9 ) {
+             if ( ev->data.note.channel == 9 ) {
                ev->data.note.note = GetForcePadNoteFromMPCPadNote(ev->data.note.note);
              }
-             break;
 
-         case SND_SEQ_EVENT_CHANPRESS:
-             // Mpc Pads on channel 9 (Aftertouch)
-             if ( ev->data.control.channel == 9 ) {
-               ev->data.control.param = GetForcePadNoteFromMPCPadNote(ev->data.control.param);
-             }
              break;
 
        }
        break;
 
    // Event from MPC application port mapped with external controller
-   // (see --tkgl_ctrlname command line option)
+
    case FROM_MPC_EXTCTRL:
        tklog_info("Midi Event received from MPC EXCTRL\n");
 
        break;
 
    // Event from external controller HARDWARE
-   // (see --tkgl_ctrlname command line option)
+
    case FROM_CTRL_EXT:
 
        tklog_info("Midi Event received from CTRL EXT\n");
