@@ -57,6 +57,7 @@ your own midi mapping to input and output midi messages.
 #include <regex.h>
 #include <time.h>
 #include <pthread.h>
+#include <errno.h>
 
 // midimapper defines -----------------------------------------------------------
 
@@ -98,6 +99,7 @@ static uint8_t MidiWkBuffer[MIDI_DECODER_SIZE];
 
 // Midi router Thread blocker
 pthread_t    MidiRouterThread;
+pthread_mutex_t ThreadLock;
 
 // Raw midi dump flag (for debugging purpose)
 static uint8_t rawMidiDumpFlag = 0 ;     // Before transformation
@@ -149,10 +151,6 @@ static typeof(&snd_rawmidi_read) orig_snd_rawmidi_read;
 typeof(&snd_rawmidi_write) orig_snd_rawmidi_write;
 static typeof(&snd_seq_create_simple_port) orig_snd_seq_create_simple_port;
 static typeof(&snd_midi_event_decode) orig_snd_midi_event_decode;
-static typeof(&snd_seq_open) orig_snd_seq_open;
-static typeof(&snd_seq_close) orig_snd_seq_close;
-static typeof(&snd_seq_port_info_set_name) orig_snd_seq_port_info_set_name;
-//static typeof(&snd_seq_event_input) orig_snd_seq_event_input;
 
 // Other more generic APIs
 static typeof(&open64) orig_open64;
@@ -175,6 +173,7 @@ static int pws_capacity_file_handler = -1 ;
 static int  snd_seq_virtual_port_rename_flag  = 0;
 static char snd_seq_virtual_port_newname [30];
 static int  snd_seq_virtual_port_clientid=-1;
+
 
 ///////////////////////////////////////////////////////////////////////////////
 // Match string against a regular expression
@@ -522,49 +521,6 @@ void dump_event(const snd_seq_event_t *ev)
 	}
 }
 
-
-// int SeqSendRawMidi(uint8_t destId,  const uint8_t *buffer, size_t size ) {
-//
-// //  uint8_t buff2[MIDI_DECODER_SIZE];
-//
-//   if ( size > MIDI_DECODER_SIZE ) {
-//     tklog_error("*** Size (%d) beyond MIDI_DECODER_SIZE (%d) while sending raw midi in SeqSendRawMidi\n",size,MIDI_DECODER_SIZE);
-//     return -1;
-//   }
-//   //tklog_debug("*** Size (%d) --  MIDI_DECODER_SIZE (%d) \n",size,MIDI_DECODER_SIZE);
-//   //ShowBufferHexDump(buffer,size,16);
-//
-//   snd_seq_event_t ev;
-//
-//   while ( snd_seq_event_output_pending(TkRouter.seq) != 0) ;
-//
-//
-//   //memcpy(buff2,buffer,size);
-//
-//   snd_seq_ev_clear(&ev);
-//   snd_seq_ev_set_subs(&ev);
-//   snd_seq_ev_set_direct(&ev);
-//   SetMidiEventDestination(&ev, destId );
-//   snd_seq_ev_set_sysex(&ev, size, buffer);
-//   int err = snd_seq_event_output (TkRouter.seq, &ev);
-//   snd_seq_drain_output(TkRouter.seq) ;
-//
-//   if (err < 0) {
-//     tklog_error("*** Error %d while sending raw midi in SeqSendRawMidi\n",err);
-//     return err;
-//   }
-//
-//
-//   //tklog_debug("*** Drain = %d \n",snd_seq_drain_output(TkRouter.seq));
-//
-//
-//   //while ( snd_seq_drain_output(TkRouter.seq) != 0) ;
-//
-//
-//   return size;
-//
-// }
-
 ///////////////////////////////////////////////////////////////////////////////
 // Alsa SEQ raw write to a seq port
 ///////////////////////////////////////////////////////////////////////////////
@@ -593,10 +549,13 @@ int SeqSendRawMidi(uint8_t destId,  const uint8_t *buffer, size_t size ) {
     tklog_trace("\n");
   }
 
+//   err = snd_seq_event_output(TkRouter.seq, &virt->out_event);
+
+
   snd_midi_event_reset_encode (midiParser);
 
   while (size > 0) {
-    snd_seq_ev_clear (&ev);
+
 		if (	( size1 = snd_midi_event_encode (midiParser, buffer, size, &ev) )  <= 0 ) break;
     snd_midi_event_reset_encode (midiParser);
 
@@ -604,14 +563,14 @@ int SeqSendRawMidi(uint8_t destId,  const uint8_t *buffer, size_t size ) {
 		result += size1;
 		buffer += size1;
 		if (ev.type == SND_SEQ_EVENT_NONE) continue;
-    if (ev.type == SND_SEQ_EVENT_SYSEX) {
+//    if (ev.type == SND_SEQ_EVENT_SYSEX) {
       //tklog_debug("SYSEX SEQ EVENT size = %d) \n",ev.data.ext.len);
       //ShowBufferHexDump(ev.data.ext.ptr,ev.data.ext.len,16);
-    }
+//    }
 
     SetMidiEventDestination(&ev, destId );
     if ( SendMidiEvent(&ev ) < 0 ) {
-      tklog_error("*** Error %d while sending raw midi in SeqSendRawMidi\n",err);
+
 			return err;
 		}
 	}
@@ -643,7 +602,7 @@ ssize_t SeqDecodeEvent(snd_seq_event_t *ev, void *buffer) {
       memcpy(buffer,ev->data.ext.ptr,r) ;
   }
   else {
-      r = snd_midi_event_decode (midiParser, buffer, MIDI_DECODER_SIZE, ev);
+      r = orig_snd_midi_event_decode (midiParser, buffer, MIDI_DECODER_SIZE, ev);
       if ( r > MIDI_DECODER_SIZE) {
         tklog_error("Midi decoder buffer overflow in SeqDecodeEvent : %d / %d.\n",r,MIDI_DECODER_SIZE);
       }
@@ -669,18 +628,19 @@ int SetMidiEventDestination(snd_seq_event_t *ev, uint8_t destId ) {
 ///////////////////////////////////////////////////////////////////////////////
 int SendMidiEvent(snd_seq_event_t *ev ) {
 
+  pthread_mutex_lock(&ThreadLock);
+
   snd_seq_ev_set_subs (ev);
   snd_seq_ev_set_direct (ev);
 
   int err = snd_seq_event_output(TkRouter.seq, ev);
-  while ( snd_seq_drain_output (TkRouter.seq) > 0 );
+  snd_seq_drain_output (TkRouter.seq) ;
 
-  if (  err < 0 ) {
-    tklog_error("Error %d while sendig midi event in SendMidiEvent.\n",err);
-    return err;
-  }
+  if (  err < 0 ) tklog_error("Error while sending midi event in SendMidiEvent : %s \n",snd_strerror(err));
 
-  return 0;
+  pthread_mutex_unlock(&ThreadLock);
+
+  return err;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -737,11 +697,6 @@ void threadMidiProcessAndRoute() {
       }
     }
 
-    send = true ;
-    //ev->flags |= SND_SEQ_PRIORITY_NORMAL;
-    //snd_seq_ev_set_subs(ev);
-    //snd_seq_ev_set_direct(ev);
-
     // -----------------------------------------------------------------------
     // Event from MPC hw device. Only private port can write
     // -----------------------------------------------------------------------
@@ -771,6 +726,7 @@ void threadMidiProcessAndRoute() {
     if ( ev->source.client == TkRouter.Ctrl.cli  && ev->source.port == TkRouter.Ctrl.port ) {
         SetMidiEventDestination(ev, TO_MPC_EXTCTRL );
         if ( midiMapperLibHandle ) send = MidiMapper( FROM_CTRL_EXT, ev ,0 ,0 );
+
     }
 
     if ( rawMidiDumpPostFlag  ) {
@@ -820,10 +776,13 @@ int  CreateSimplePort(snd_seq_t *seq, const char* name ) {
 
   int p = -1;
   if ( (  p = snd_seq_create_simple_port(seq, name,
-        SND_SEQ_PORT_CAP_WRITE | SND_SEQ_PORT_CAP_SUBS_WRITE |
-        SND_SEQ_PORT_CAP_READ | SND_SEQ_PORT_CAP_SUBS_READ |
-        SND_SEQ_PORT_CAP_DUPLEX,
-        SND_SEQ_PORT_TYPE_HARDWARE | SND_SEQ_PORT_TYPE_MIDI_GENERIC
+            SND_SEQ_PORT_CAP_WRITE | SND_SEQ_PORT_CAP_SYNC_WRITE | SND_SEQ_PORT_CAP_SUBS_WRITE |
+            SND_SEQ_PORT_CAP_READ | SND_SEQ_PORT_CAP_SUBS_READ | SND_SEQ_PORT_CAP_SYNC_READ
+
+        //SND_SEQ_PORT_CAP_WRITE | SND_SEQ_PORT_CAP_SUBS_WRITE |
+        //SND_SEQ_PORT_CAP_READ | SND_SEQ_PORT_CAP_SUBS_READ |
+        //SND_SEQ_PORT_CAP_DUPLEX,
+        , SND_SEQ_PORT_TYPE_MIDI_GENERIC
       ) )  < 0) {
     tklog_fatal("Error creating sequencer port %s.\n",name);
     exit(1);
@@ -857,13 +816,8 @@ static void makeLdHooks() {
 	orig_snd_rawmidi_write          = dlsym(RTLD_NEXT, "snd_rawmidi_write");
 	orig_snd_seq_create_simple_port = dlsym(RTLD_NEXT, "snd_seq_create_simple_port");
 	orig_snd_midi_event_decode      = dlsym(RTLD_NEXT, "snd_midi_event_decode");
-  orig_snd_seq_open               = dlsym(RTLD_NEXT, "snd_seq_open");
-  orig_snd_seq_close              = dlsym(RTLD_NEXT, "snd_seq_close");
-  orig_snd_seq_port_info_set_name = dlsym(RTLD_NEXT, "snd_seq_port_info_set_name");
   orig_open64                     = dlsym(RTLD_NEXT, "open64");
   orig_close                      = dlsym(RTLD_NEXT, "close");
-
-  //orig_snd_seq_event_input        = dlsym(RTLD_NEXT, "snd_seq_event_input");
 
 }
 
@@ -956,8 +910,6 @@ static void tkgl_init()
   // Change the name of the seq with our for a better view in aconnect...
   snd_seq_set_client_name(TkRouter.seq, ROUTER_SEQ_NAME);
   TkRouter.cli = snd_seq_client_id(TkRouter.seq) ;
-
-  snd_seq_set_client_pool_output	(	TkRouter.seq, TKROUTER_SEQ_POOL_OUT_SIZE);
 
   // Create router  ports
   TkRouter.portPriv    = CreateSimplePort(TkRouter.seq, "Priv Private" );
@@ -1096,15 +1048,9 @@ int __libc_start_main(
     typeof(&__libc_start_main) orig = dlsym(RTLD_NEXT, "__libc_start_main");
 
     // Don't go if it is not an MPC executable
-//    char binName[64];
-//    strcpy(binName,argv[0]);
-//    if ( )
-
-//    strrchr( const char * string, int searchedChar )
-
     if ( strstr(argv[0],"MPC") == NULL )  {
 
-      tklog_info("Ignoring LD_PRELOAD for %s\n",argv[0]);
+      tklog_info("TKGL_MIDIMAPPER : Ignoring LD_PRELOAD for %s\n",argv[0]);
       int r =  orig(main, argc, argv, init, fini, rtld_fini, stack_end);
       return r;
 
@@ -1385,39 +1331,6 @@ ssize_t snd_rawmidi_write(snd_rawmidi_t *rawmidi,const void *buffer,size_t size)
 
   }
 	return 	orig_snd_rawmidi_write(rawmidi, buffer, size);
-}
-
-///////////////////////////////////////////////////////////////////////////////
-// Alsa open sequencer
-///////////////////////////////////////////////////////////////////////////////
-int snd_seq_open (snd_seq_t **handle, const char *name, int streams, int mode) {
-
-  //tklog_debug("snd_seq_open %s (%p) \n",name,handle);
-
-  return orig_snd_seq_open(handle, name, streams, mode);
-
-}
-
-///////////////////////////////////////////////////////////////////////////////
-// Alsa close sequencer
-///////////////////////////////////////////////////////////////////////////////
-int snd_seq_close (snd_seq_t *handle) {
-
-  //tklog_debug("snd_seq_close. Hanlde %p \n",handle);
-
-  return orig_snd_seq_close(handle);
-
-}
-
-///////////////////////////////////////////////////////////////////////////////
-// Alsa set a seq port name
-///////////////////////////////////////////////////////////////////////////////
-void snd_seq_port_info_set_name	(	snd_seq_port_info_t * 	info, const char * 	name )
-{
-  //tklog_debug("snd_seq_port_info_set_name %s (%p) \n",name);
-
-
-  return snd_seq_port_info_set_name	(	info, name );
 }
 
 ///////////////////////////////////////////////////////////////////////////////
