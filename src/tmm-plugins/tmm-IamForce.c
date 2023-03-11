@@ -280,10 +280,8 @@ static void MPCSetMapButtonLed(snd_seq_event_t *ev) {
   else if ( ev->data.control.param == FORCE_BT_ASSIGN_B )   mapVal = MPC_BT_BANK_B;
   else if ( ev->data.control.param == FORCE_BT_SOLO     )   mapVal = MPC_BT_BANK_B;
 
-
   if ( mapVal >=0 ) {
     ev->data.control.param = mapVal;
-
     SendMidiEvent(ev );
   }
 
@@ -318,16 +316,15 @@ static void MPCSetMapButton(snd_seq_event_t *ev) {
     else if (  ev->data.note.note == MPC_BT_QLINK_SELECT ) {
 
       if ( KnobTouch && ev->data.note.velocity == 0x7F ) KnobShiftMode = !KnobShiftMode ;
-      tklog_debug("Knob touch = %s  KnobShiftMode %s\n",KnobTouch ? "True":"False",KnobShiftMode ? "True":"False");
 
       // Set LED
-      // snd_seq_event_t ev2;
-      // ev2.type = SND_SEQ_EVENT_CONTROLLER;
-      // ev2.data.control.channel = 0 ;
-      // ev2.data.control.param = MPC_BT_QLINK_SELECT ;
-      // ev2.data.control.value = KnobShiftMode ? 1:0;
-      // SetMidiEventDestination(&ev2,TO_CTRL_MPC_PRIVATE);
-      // SendMidiEvent(&ev2 );
+      snd_seq_event_t ev2;
+      ev2.type = SND_SEQ_EVENT_CONTROLLER;
+      ev2.data.control.channel = 0 ;
+      ev2.data.control.param = MPC_BT_QLINK_SELECT_LED_1 ;
+      ev2.data.control.value = KnobShiftMode ? 3:0;
+      SetMidiEventDestination(&ev2,TO_CTRL_MPC_PRIVATE);
+      SendMidiEvent(&ev2 );
 
       if ( ! KnobShiftMode ) mapVal = FORCE_BT_KNOBS;
 
@@ -443,9 +440,7 @@ bool MidiMapper( uint8_t sender, snd_seq_event_t *ev, uint8_t *buffer, size_t si
        //tklog_info("Midi RAW Event received from MPC PUBLIC\n");
 
        // Akai Sysex :  F0 47 7F [id] (...) F7
-
-//       while ( ( buffer[i] == 0xF0 && buffer[i+1] == 0x47 memcmp(&buffer[i],AkaiSysex, sizeof(AkaiSysex) ) == 0  && i < size ) {
-        while ( buffer[i] == 0xF0 && buffer[i+1] == 0x47  && i < size ) {
+       while ( buffer[i] == 0xF0 && buffer[i+1] == 0x47  && i < size ) {
 
           i += sizeof(AkaiSysex);
           // Change Sysex device id
@@ -471,31 +466,7 @@ bool MidiMapper( uint8_t sender, snd_seq_event_t *ev, uint8_t *buffer, size_t si
             if ( padF < 64 ) {
               uint8_t padCt = ( ( 7 - padF / 8 ) * 10 + 11 + padF % 8 );
               ControllerSetPadColorRGB(padCt, Force_PadColorsCache[padF].c.r, Force_PadColorsCache[padF].c.g,Force_PadColorsCache[padF].c.b);
-
             }
-
-            //else {
-              // Force pads from 64 are status pad (and not notes pads)
-              //if ( CtrlShiftMode) ControllerRefreshColumnsPads(true);
-
-              // if ( !ShiftMode ) {
-              //   // Get the current track - Line 8
-              //   if ( padFL == 8 && Force_PadColorsCache[padF].v == COLOR_RED ) {
-              //       uint8_t currentTrack = 1;
-              //       currentTrack = padFC + 1 ;
-              //       tklog_debug("Current track = %d\n", currentTrack);
-              //   }
-              //   // Solo & rec modes line
-              //   else if (  padFL == 9  ) {
-              //     tklog_debug("Solo modes column %d color %0x \n", padFC,Force_PadColorsCache[padF].v);
-              //   }
-              // }
-              // else {
-              //
-              // }
-              //if ( CtrlShiftMode) ControllerRefreshColumnsPads(true);
-            //}
-
           }
 
           // Reach end of sysex to loop on the next sysex command

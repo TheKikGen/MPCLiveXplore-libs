@@ -255,7 +255,10 @@ __ __| |           |  /_) |     ___|             |           |\n\
 #define MPC_BT_QLINK14_TOUCH 0x61
 #define MPC_BT_QLINK15_TOUCH 0x62
 #define MPC_BT_QLINK16_TOUCH 0x63
-
+#define MPC_BT_QLINK_SELECT_LED_1 0x5A
+#define MPC_BT_QLINK_SELECT_LED_2 0x5B
+#define MPC_BT_QLINK_SELECT_LED_3 0x5C
+#define MPC_BT_QLINK_SELECT_LED_4 0x5D
 
 // MPC PAd note values
 #define MPC_PAD_1 0x25

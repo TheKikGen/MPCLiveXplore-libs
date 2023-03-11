@@ -321,10 +321,11 @@ static bool ControllerEventReceived(snd_seq_event_t *ev) {
           mapVal = CtrlShiftMode ? FORCE_BT_UP : FORCE_BT_DOWN ;
         }
         else if  ( ev->data.control.param == CTRL_BT_LEFT ) { // <
-          mapVal = FORCE_BT_LEFT ;
+
+          mapVal = CtrlShiftMode ? FORCE_BT_LEFT : FORCE_BT_COPY  ;
         }
         else if  ( ev->data.control.param == CTRL_BT_RIGHT ) { // >
-          mapVal = FORCE_BT_RIGHT ;
+          mapVal = CtrlShiftMode ? FORCE_BT_RIGHT :FORCE_BT_DELETE   ;
         }
         // Launch buttons
         else if  ( ev->data.control.param == CTRL_BT_LAUNCH_1 ) { // >
