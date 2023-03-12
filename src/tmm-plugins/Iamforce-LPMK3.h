@@ -35,6 +35,73 @@ BASED ON THE DEFAULT USER CONFIGURATION
   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
 */
 
+/*
+-------------------------------------------------------------------------------
+MAPPING CONFIGURATION WITH FORCE BUTTONS AND FUNCTIONS - LAUNCHPAD MINI MK3
+
+
+- UP BUTTON aka "Controller SHIFT"
+The UP button is used as a "controller SHIFT" button.  This is not the same
+"shift" as the one present on the MPC, i.e. it is Laucnhchpad MINI specific.
+
+- DOWN BUTTON :
+. Go down in the clip matrix.
+. if controller shift holded : go UP in the matrix.
+
+
+- LEFT BUTTON :
+. equivalent to Force copy clip button
+. if controller shift holded : go left in the pad matrix
+
+- RIGHT BUTTON :
+. equivalent to Force delete clip button
+. if controller shift holded : go right in the pad matrix
+
+
+- "STOP SOLO MUTE" button aka SSM
+
+If "Controller SHIFT" is holded, the SSM button will send a Force LAUNCH 8.
+
+If SSM is holded, the 2 "columns pads" lines are showed on line 7 and 8.  It is
+then possible to select the track or mute/solo/stop clip/rec arm tracks by
+pressing the right pad.  First line is corresponding to track select, and second
+is solo modes.
+
+SSM holded :
++ Pads = Select track and swith solo modes on/Off
+
++ Pad on the first line = will show track edit on the selected pad column
+
++ Launch 7 = change current solo mode . The SSM button color will change
+accordingly to the current mode : red = rec arm, orange = mute, blue = solo,
+green = clip stop.
+
++ LAUNCH 6 = STOP ALL CLIPS. Same behavious as Force
+
++ Launch 5 = MPC SHIFT key.  This can be used to show options settings on the 2
+last lines rather than solo modes (same behaviour as Force).  You can use that
+to set metronome on/off or transpose the keyboard for example.
+
++ Launch 4 = lock the SSM mode ON/OFF. The 2 last lines of the Launchpad will
+show columns pads permanenently.
+
+- LAUNCH 1-7
+. If not in controller shift mode or SSM mode, equivalent to Force launch buttons.
+
+- LAUNCH 8 (SSM button)
+. if controller shift mode is holded, that will generate a Force launch 8 button.
+
+- SESSION button :
+. if controller shift mode is holded : MASTER
+. else : LAUNCH
+
+- USER button : STEP SEQ
+
+- KEYS button :   NOTE
+
+-------------------------------------------------------------------------------
+*/
+
 // ----------------------------------------------------------------------------
 // Launchpad MK3 module for IamForce
 // ----------------------------------------------------------------------------
@@ -59,12 +126,14 @@ BASED ON THE DEFAULT USER CONFIGURATION
 #define CTRL_BT_LAUNCH_7 0x1D
 #define CTRL_BT_STOP_SM 0x13
 
+#define CTRL_COLOR_WHITE 0x01
 #define CTRL_COLOR_BLUE 0x2D
 #define CTRL_COLOR_RED  0x05
 #define CTRL_COLOR_RED_LT 0x07
 #define CTRL_COLOR_GREEN 0x57
 #define CTRL_COLOR_ORANGE 0x09
 
+// SYSEX for Launchpad mini Mk3
 
 const uint8_t SX_DEVICE_INQUIRY[] = { 0xF0, 0x7E, 0x7F, 0x06, 0x01, 0xF7 };
 const uint8_t SX_LPMK3_INQUIRY_REPLY_APP[] = { 0xF0, 0x7E, 0x00, 0x06, 0x02, 0x00, 0x20, 0x29, 0x13, 0x01, 0x00, 0x00 } ;
@@ -84,7 +153,7 @@ uint8_t SX_LPMK3_LED_RGB_COLOR[] = { LP_SYSEX_HEADER, 0x03, 0x03, 0x00, 0x00, 0x
 ///////////////////////////////////////////////////////////////////////////////
 // LaunchPad Mini Mk3 Specifics
 ///////////////////////////////////////////////////////////////////////////////
-// Scroll Text
+// Scroll a Text on pads
 static void ControllerScrollText(const char *message,uint8_t loop, uint8_t speed, uint32_t rgbColor) {
   uint8_t buffer[128];
   uint8_t *pbuff = buffer;
@@ -120,9 +189,7 @@ static void ControllerSetPadColorRGB(uint8_t padCt, uint8_t r, uint8_t g, uint8_
   SX_LPMK3_LED_RGB_COLOR[11] = b ;
 
   SeqSendRawMidi( TO_CTRL_EXT,SX_LPMK3_LED_RGB_COLOR,sizeof(SX_LPMK3_LED_RGB_COLOR) );
-
 }
-
 
 ///////////////////////////////////////////////////////////////////////////////
 // Show a line from Force pad color cache (source = Force pad#, Dest = ctrl pad #)
@@ -153,8 +220,9 @@ static void ControllerRefreshPadsFromForceCache() {
     }
 }
 
-
-// Mk3 init
+///////////////////////////////////////////////////////////////////////////////
+// Controller initialization
+///////////////////////////////////////////////////////////////////////////////
 static int ControllerInitialize() {
 
   tklog_info("IamForce : Novation Launchpad Mini MK3 implementtion.\n");
@@ -164,16 +232,17 @@ static int ControllerInitialize() {
 
   ControllerScrollText("IamForce",0,21,COLOR_SEA);
 
-  uint8_t midiMsg[3];
-  midiMsg[0]=0x92;
-  midiMsg[1]=CTRL_BT_UP;
-  midiMsg[2]=0x2D;
+  uint8_t midiMsg[] = {
+    0x92, CTRL_BT_UP, CTRL_COLOR_BLUE,
+    0x92, CTRL_BT_LOGO, CTRL_COLOR_RED_LT,
+  };
 
-  SeqSendRawMidi(TO_CTRL_EXT,midiMsg,3);
-
-
+  SeqSendRawMidi(TO_CTRL_EXT,midiMsg,sizeof(midiMsg));
 }
 
+///////////////////////////////////////////////////////////////////////////////
+// Get a Force pad index from a Launchpad index
+///////////////////////////////////////////////////////////////////////////////
 static uint8_t ControllerGetForcePadNote(uint8_t padCt) {
   // Convert pad to Force pad #
   padCt -=  11;
@@ -182,13 +251,13 @@ static uint8_t ControllerGetForcePadNote(uint8_t padCt) {
   return  padL * 8 + padC + FORCEPADS_NOTE_OFFSET;
 }
 
-
-// Controller Led Mapping
+///////////////////////////////////////////////////////////////////////////////
+// Map LED lightning messages from Force with Launchpad buttons leds colors
+///////////////////////////////////////////////////////////////////////////////
 static void ControllerSetMapButtonLed(snd_seq_event_t *ev) {
 
     int mapVal = -1 ;
     int mapVal2 = -1;
-
 
     if ( ev->data.control.param == FORCE_BT_NOTE )       mapVal = CTRL_BT_KEYS;
     if ( ev->data.control.param == FORCE_BT_STEP_SEQ )   mapVal = CTRL_BT_USER;
@@ -265,7 +334,9 @@ static void ControllerSetMapButtonLed(snd_seq_event_t *ev) {
 
 }
 
-// Refresh Columns pads
+///////////////////////////////////////////////////////////////////////////////
+// Refresh columns mode lines 7 & 8 on the LaunchPad
+///////////////////////////////////////////////////////////////////////////////
 static void ControllerRefreshColumnsPads(bool show) {
   if ( show ) {
     // Line 9 = track selection
@@ -279,7 +350,9 @@ static void ControllerRefreshColumnsPads(bool show) {
   }
 }
 
-// An event was received from the Launchpad MK3
+///////////////////////////////////////////////////////////////////////////////
+// Process an event received from the Launchpad
+///////////////////////////////////////////////////////////////////////////////
 static bool ControllerEventReceived(snd_seq_event_t *ev) {
 
   switch (ev->type) {

@@ -126,7 +126,7 @@ static int mapCtrl_ButtonsLeds_Inv[MAPPING_TABLE_SIZE]; // Inverted table
 static int MPC_PadOffsetL = 0;
 static int MPC_PadOffsetC = 0;
 
-// Force Matric pads color cache
+// Force Matrix pads color cache
 static Force_MPCPadColor_t Force_PadColorsCache[256];
 
 // // End user virtual port name
@@ -451,7 +451,7 @@ static void LoadMappingFromConfFile(const char * confFileName) {
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-// Load Custome controller mapping tables from config file
+// Load Custom controller mapping tables from config file
 ///////////////////////////////////////////////////////////////////////////////
 static void LoadCtrlMappingFromConfFile(const char * confFileName) {
 
@@ -1374,17 +1374,19 @@ int  CreateSimpleRouterPort(snd_seq_t *seq, const char* name ) {
 void ShowHelp(void) {
 
   tklog_info("\n") ;
-  tklog_info("--tgkl_help               : Show this help\n") ;
-  tklog_info("--tkgl_ctrlname=<name>    : Use external controller containing <name>\n") ;
-  tklog_info("--tkgl_iamX               : Emulate MPC X\n") ;
-  tklog_info("--tkgl_iamLive            : Emulate MPC Live\n") ;
-  tklog_info("--tkgl_iamForce           : Emulate Force\n") ;
-  tklog_info("--tkgl_iamOne             : Emulate MPC One\n") ;
-  tklog_info("--tkgl_iamLive2           : Emulate MPC Live Mk II\n") ;
+  tklog_info("--tkhelp               : Show this help\n") ;
+//  tklog_info("--tk_ctrlname=<name>    : Use external controller containing <name>\n") ;
+  tklog_info("--tkport=<cli:port>    : Alsa sequence client::port. Use aconnect -l to find your controller port.\n") ;
+
+  tklog_info("--tkiamX               : Emulate MPC X\n") ;
+  tklog_info("--tkiamLive            : Emulate MPC Live\n") ;
+  tklog_info("--tkiamForce           : Emulate Force\n") ;
+  tklog_info("--tkiamOne             : Emulate MPC One\n") ;
+  tklog_info("--tkiamLive2           : Emulate MPC Live Mk II\n") ;
   //tklog_info("--tkgl_virtualport=<name> : Create end user virtual port <name>\n") ;
-  tklog_info("--tkgl_mididump           : Dump original raw midi flow\n") ;
-  tklog_info("--tkgl_mididumpPost       : Dump raw midi flow after transformation\n") ;
-  tklog_info("--tkgl_configfile=<name>  : Use configuration file <name>\n") ;
+  tklog_info("--tkdump               : Dump original raw midi flow\n") ;
+  tklog_info("--tkdumpP              : Dump raw midi flow after transformation\n") ;
+  tklog_info("--tkmapfile=<name>     : Use configuration file <name>\n") ;
   tklog_info("\n") ;
   exit(0);
 }
@@ -1466,18 +1468,15 @@ static void tkgl_init()
 	tklog_info("MPC controller Public  hardware port Alsa name is %s. Sequencer id is %d:%d.\n",mpc_midi_public_alsa_name,TkRouter.Mpc.cli,TkRouter.Mpc.portPub);
 
 	// Get our controller seq  port client
-	if ( anyctrl_name  != NULL) {
-
-		// Initialize card id for public and private
-    if ( GetSeqClientFromPortName(anyctrl_name,anyctrl_name,&TkRouter.Ctrl.card,&TkRouter.Ctrl.cli,&TkRouter.Ctrl.port) < 0 ) {
-      tklog_error("Error : %s controller card/seq client not found. Parameter ignored.\n",anyctrl_name);
-      anyctrl_name[0] = 0;
+  if ( TkRouter.Ctrl.cli >= 0 ) {
+    if ( GetSeqClientPortName(TkRouter.Ctrl.cli,TkRouter.Ctrl.port,ctrl_cli_name,ctrl_port_name) == 0   ) {
+      tklog_info("External midi controller name is %s %s on port (%d:%d).\n",ctrl_cli_name,ctrl_port_name,TkRouter.Ctrl.cli,TkRouter.Ctrl.port);
     }
     else {
-       tklog_info("%s controller hardware port Alsa name is hw:%d,0,%d. Sequencer id is %d:%d.\n",anyctrl_name,TkRouter.Ctrl.card,TkRouter.Ctrl.port,TkRouter.Ctrl.cli,TkRouter.Ctrl.port);
+      tklog_error("External midi controller name not found for port (%d:%d), and will be ignored.\n",TkRouter.Ctrl.cli,TkRouter.Ctrl.port);
+      TkRouter.Ctrl.cli = TkRouter.Ctrl.port = -1;
     }
-
-	}
+  }
 
 	// Create 3 virtuals rawmidi ports : Private I/O, Public O that will expose rawmidi internal ports
   // The port is always 0. This is the standard behaviour of Alsa virtual rawmidi.
@@ -1635,37 +1634,48 @@ int __libc_start_main(
     for ( int i = 1 ; i < argc ; i++ ) {
 
       // help
-      if ( ( strcmp("--tkgl_help",argv[i]) == 0 ) ) {
+      if ( ( strcmp("--tkhelp",argv[i]) == 0 ) ) {
          ShowHelp();
       }
       else
-      if ( ( strncmp("--tkgl_ctrlname=",argv[i],16) == 0 ) && ( strlen(argv[i]) >16 ) ) {
-         strcpy(anyctrl_name,argv[i] + 16);
-         tklog_info("--tgkl_ctrlname specified for %s midi controller\n",anyctrl_name) ;
+
+      if ( ( strncmp("--tkport=",argv[i],9) == 0 ) && ( strlen(argv[i]) > 9 ) ) {
+
+         char * p = strchr(argv[i] + 9,':') ;
+         if ( p == NULL || strlen( argv[i] + 9) < 3 || *(p+1) < '0' || *(p+1) > '9'  ) {
+           tklog_fatal("--tkport specified. Bad port format. Use 'aconnect -l' command to find your controller 'client:port'.\n") ;
+           exit(1);
+         }
+         // Parse port cli:port
+         *p = 0; p++;
+
+         TkRouter.Ctrl.cli = atoi(argv[i] + 9);
+         TkRouter.Ctrl.port = atoi(p);
+         tklog_info("--tkport specified. Midi Seq port (%d:%d) will be captured\n",TkRouter.Ctrl.cli,TkRouter.Ctrl.port) ;
       }
-      else
+
       // Spoofed product id
-      if ( ( strcmp("--tkgl_iamX",argv[i]) == 0 ) ) {
+      if ( ( strcmp("--tkiamX",argv[i]) == 0 ) ) {
         MPC_SpoofedId = MPC_X;
         tkgl_SpoofArg = argv[i];
       }
       else
-      if ( ( strcmp("--tkgl_iamLive",argv[i]) == 0 ) ) {
+      if ( ( strcmp("--tkiamLive",argv[i]) == 0 ) ) {
         MPC_SpoofedId = MPC_LIVE;
         tkgl_SpoofArg = argv[i];
       }
       else
-      if ( ( strcmp("--tkgl_iamForce",argv[i]) == 0 ) ) {
+      if ( ( strcmp("--tkiamForce",argv[i]) == 0 ) ) {
         MPC_SpoofedId = MPC_FORCE;
         tkgl_SpoofArg = argv[i];
       }
       else
-      if ( ( strcmp("--tkgl_iamOne",argv[i]) == 0 ) ) {
+      if ( ( strcmp("--tkiamOne",argv[i]) == 0 ) ) {
         MPC_SpoofedId = MPC_ONE;
         tkgl_SpoofArg = argv[i];
       }
       else
-      if ( ( strcmp("--tkgl_iamLive2",argv[i]) == 0 ) ) {
+      if ( ( strcmp("--tkgiamLive2",argv[i]) == 0 ) ) {
         MPC_SpoofedId = MPC_LIVE_MK2;
         tkgl_SpoofArg = argv[i];
       }
@@ -1677,20 +1687,20 @@ int __libc_start_main(
       // }
       // else
       // Dump rawmidi
-      if ( ( strcmp("--tkgl_mididump",argv[i]) == 0 ) ) {
+      if ( ( strcmp("--tkdump",argv[i]) == 0 ) ) {
         rawMidiDumpFlag = 1 ;
-        tklog_info("--tkgl_mididump specified : dump original raw midi message (ENTRY)\n") ;
+        tklog_info("--tkdump specified : dump original raw midi message (ENTRY)\n") ;
       }
       else
-      if ( ( strcmp("--tkgl_mididumpPost",argv[i]) == 0 ) ) {
+      if ( ( strcmp("--tkdumpP",argv[i]) == 0 ) ) {
         rawMidiDumpPostFlag = 1 ;
-        tklog_info("--tkgl_mididumpPost specified : dump raw midi message after transformation (POST)\n") ;
+        tklog_info("--tkdumpP specified : dump raw midi message after transformation (POST)\n") ;
       }
       else
       // Config file name
-      if ( ( strncmp("--tkgl_configfile=",argv[i],18) == 0 ) && ( strlen(argv[i]) >18 )  ) {
-        configFileName = argv[i] + 18 ;
-        tklog_info("--tkgl_configfile specified. File %s will be used for mapping\n",configFileName) ;
+      if ( ( strncmp("--tkmapfile=",argv[i],12) == 0 ) && ( strlen(argv[i]) >12 )  ) {
+        configFileName = argv[i] + 12 ;
+        tklog_info("--tkmapfile specified. File %s will be used for mapping\n",configFileName) ;
       }
 
 
