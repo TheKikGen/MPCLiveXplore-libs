@@ -778,10 +778,6 @@ int  CreateSimplePort(snd_seq_t *seq, const char* name ) {
   if ( (  p = snd_seq_create_simple_port(seq, name,
             SND_SEQ_PORT_CAP_WRITE | SND_SEQ_PORT_CAP_SYNC_WRITE | SND_SEQ_PORT_CAP_SUBS_WRITE |
             SND_SEQ_PORT_CAP_READ | SND_SEQ_PORT_CAP_SUBS_READ | SND_SEQ_PORT_CAP_SYNC_READ
-
-        //SND_SEQ_PORT_CAP_WRITE | SND_SEQ_PORT_CAP_SUBS_WRITE |
-        //SND_SEQ_PORT_CAP_READ | SND_SEQ_PORT_CAP_SUBS_READ |
-        //SND_SEQ_PORT_CAP_DUPLEX,
         , SND_SEQ_PORT_TYPE_MIDI_GENERIC
       ) )  < 0) {
     tklog_fatal("Error creating sequencer port %s.\n",name);
@@ -818,6 +814,32 @@ static void makeLdHooks() {
 	orig_snd_midi_event_decode      = dlsym(RTLD_NEXT, "snd_midi_event_decode");
   orig_open64                     = dlsym(RTLD_NEXT, "open64");
   orig_close                      = dlsym(RTLD_NEXT, "close");
+
+}
+
+
+///////////////////////////////////////////////////////////////////////////////
+// Connect external controller port to TkRouter seq
+///////////////////////////////////////////////////////////////////////////////
+
+static void CtrlExtSeqConnect()
+{
+  snd_seq_disconnect_from	(	TkRouter.seq, TkRouter.portCtrl, TkRouter.Ctrl.cli, TkRouter.Ctrl.port);
+
+  if ( snd_seq_connect_from	(	TkRouter.seq, TkRouter.portCtrl, TkRouter.Ctrl.cli, TkRouter.Ctrl.port) < 0 ) {
+    tklog_fatal("Alsa error while connecting external controller to router.\n");
+    exit(1);
+  }
+  tklog_info("Ext controller port (%d:%d) connected to Router controller port in (%d:%d).\n",TkRouter.Ctrl.cli, TkRouter.Ctrl.port, TkRouter.cli,TkRouter.portCtrl );
+
+
+  snd_seq_disconnect_to	(	TkRouter.seq, TkRouter.portCtrl, TkRouter.Ctrl.cli, TkRouter.Ctrl.port);
+
+  if ( snd_seq_connect_to	(	TkRouter.seq, TkRouter.portCtrl, TkRouter.Ctrl.cli, TkRouter.Ctrl.port) < 0 ) {
+    tklog_fatal("Alsa error while connecting router to external controller.\n");
+    exit(1);
+  }
+  tklog_info("Router controller port in (%d:%d) connected to Ext controller port (%d:%d).\n",TkRouter.cli,TkRouter.portCtrl,	TkRouter.Ctrl.cli, TkRouter.Ctrl.port );
 
 }
 
@@ -984,20 +1006,7 @@ static void tkgl_init()
   //           - OUT ------------------>  IN CTRL
 
 	// Connect our controller if used
-	if (TkRouter.Ctrl.cli >= 0) {
-
-    if ( snd_seq_connect_from	(	TkRouter.seq, TkRouter.portCtrl, TkRouter.Ctrl.cli, TkRouter.Ctrl.port) < 0 ) {
-     tklog_fatal("Alsa error while connecting external controller to router.\n");
-     exit(1);
-    }
-    tklog_info("Ext controller port (%d:%d) connected to Router controller port in (%d:%d).\n",TkRouter.Ctrl.cli, TkRouter.Ctrl.port, TkRouter.cli,TkRouter.portCtrl );
-
-    if ( snd_seq_connect_to	(	TkRouter.seq, TkRouter.portCtrl, TkRouter.Ctrl.cli, TkRouter.Ctrl.port) < 0 ) {
-     tklog_fatal("Alsa error while connecting router to external controller.\n");
-     exit(1);
-    }
-    tklog_info("Router controller port in (%d:%d) connected to Ext controller port (%d:%d).\n",TkRouter.cli,TkRouter.portCtrl,	TkRouter.Ctrl.cli, TkRouter.Ctrl.port );
-	}
+	if (TkRouter.Ctrl.cli >= 0) CtrlExtSeqConnect();
 
   // Start Router thread
   if ( pthread_create(&MidiRouterThread, NULL, threadMidiRouter, NULL) < 0) {
@@ -1038,6 +1047,7 @@ int __libc_start_main(
     int (*main)(int, char **, char **),
     int argc,
     char **argv,
+
     int (*init)(int, char **, char **),
     void (*fini)(void),
     void (*rtld_fini)(void),
@@ -1396,8 +1406,9 @@ int snd_seq_create_simple_port	(	snd_seq_t * 	seq, const char * 	name, unsigned 
 
              if ( snd_seq_connect_from	(	TkRouter.seq, TkRouter.portCtrl, TkRouter.Ctrl.cli, TkRouter.Ctrl.port) == 0 ) {
                 // We were disconnected
-                snd_seq_connect_from	(	TkRouter.seq, TkRouter.portCtrl, TkRouter.Ctrl.cli, TkRouter.Ctrl.port) ;
                 extCtrlPortCountW = extCtrlPortCountR = 0;
+                CtrlExtSeqConnect();
+                MidiMapperSetup();
             }
 
             uint8_t cancelPort = 0;
