@@ -42,6 +42,13 @@ __ __| |           |  /_) |     ___|             |           |\n\
   |   | | |  __/  . \\  |   <  |   |  __/ |   |  |     (   | |   |\\__ \\\n\
  _|  _| |_|\\___| _|\\_\\_|_|\\_\\\\____|\\___|_|  _| _____|\\__,_|_.__/ ____/\n\
 "
+
+// Sysex
+
+#define FORCE_SX_SET_PAD_RGB 0x65
+#define AKAI_SYSEX_HEADER 0xF0,0x47, 0x7F
+#define AKAI_SYSEX_IDENTITY_REPLY_HEADER 0xF0,0x7E,0x00,0x06,0x02,0x47
+
 // Router
 #define ROUTER_SEQ_NAME "TKGL Midi"
 
@@ -71,8 +78,10 @@ __ __| |           |  /_) |     ___|             |           |\n\
 #define POWER_SUPPLY_CAPACITY "100"
 
 // Colors R G B (nb . max r g b value is 7f. The bit 8 is always set )
-#define COLOR_FIRE       0x7F1919
-#define COLOR_TANGERINE  0x7F3419
+#define COLOR_BLACK      0x000000
+
+#define COLOR_FIRE       0x060101
+#define COLOR_TANGERINE  0x060201
 #define COLOR_APRICOT    0x7F5019
 #define COLOR_CANARY     0x7F6E19
 #define COLOR_LEMON      0x757F19
@@ -92,6 +101,32 @@ __ __| |           |  /_) |     ___|             |           |\n\
 #define COLOR_FUSHIA     0x7F197F
 #define COLOR_MAGENTA    0x7F1964
 #define COLOR_CORAL      0x7F1949
+
+// Fire
+// Orange
+// Tangerine
+// Apricot
+// Yellow
+// Canary
+// Lemon
+// Chartreuse
+// Neon
+// Lime
+// Clover
+// Sea
+// Mint
+// Cyan
+// Sky
+// Azure
+// Grey
+// Midnight
+// Indigo
+// Violet
+// Grape
+// Fuschia
+// Magenta
+// Coral
+// Green
 
 #define COLOR_WHITE      0x7F7F7F
 #define COLOR_BLACK      0x000000
@@ -140,6 +175,14 @@ __ __| |           |  /_) |     ___|             |           |\n\
 #define FORCE_BT_QLINK6_TOUCH 0x58
 #define FORCE_BT_QLINK7_TOUCH 0x59
 #define FORCE_BT_QLINK8_TOUCH 0x5A
+#define FORCE_KN_QLINK_1 0x10
+#define FORCE_KN_QLINK_2 0x11
+#define FORCE_KN_QLINK_3 0x12
+#define FORCE_KN_QLINK_4 0x13
+#define FORCE_KN_QLINK_5 0x14
+#define FORCE_KN_QLINK_6 0x15
+#define FORCE_KN_QLINK_7 0x16
+#define FORCE_KN_QLINK_8 0x17
 #define FORCE_BT_STOP_ALL 95
 #define FORCE_BT_UP 112
 #define FORCE_BT_DOWN 113
