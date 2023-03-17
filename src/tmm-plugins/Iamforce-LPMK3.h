@@ -129,12 +129,34 @@ show columns pads permanenently.
 #define CTRL_BT_LAUNCH_7 0x1D
 #define CTRL_BT_STOP_SM 0x13
 
-#define CTRL_COLOR_WHITE 0x01
-#define CTRL_COLOR_BLUE 0x2D
-#define CTRL_COLOR_RED  0x05
+// Pads start at 0 from bottom left to upper right
+#define CTRL_PAD_NOTE_OFFSET 0
+#define CTRL_PAD_MAX_LINE 8
+#define CTRL_PAD_MAX_COL  8
+
+
+// Standard colors
+#define CTRL_COLOR_BLACK 0
+#define CTRL_COLOR_DARK_GREY 1
+#define CTRL_COLOR_GREY 2
+#define CTRL_COLOR_WHITE 3
+#define CTRL_COLOR_RED 5
 #define CTRL_COLOR_RED_LT 0x07
-#define CTRL_COLOR_GREEN 0x57
-#define CTRL_COLOR_ORANGE 0x09
+#define CTRL_COLOR_AMBER 9
+#define CTRL_COLOR_YELLOW 13
+#define CTRL_COLOR_LIME 17
+#define CTRL_COLOR_GREEN 21
+#define CTRL_COLOR_SPRING 25
+#define CTRL_COLOR_TURQUOISE 29
+#define CTRL_COLOR_CYAN 33
+#define CTRL_COLOR_SKY 37
+#define CTRL_COLOR_OCEAN 41
+#define CTRL_COLOR_BLUE 45
+#define CTRL_COLOR_ORCHID 49
+#define CTRL_COLOR_MAGENTA 53
+#define CTRL_COLOR_PINK 57
+
+
 
 // SYSEX for Launchpad mini Mk3
 
@@ -186,7 +208,6 @@ static void ControllerScrollText(const char *message,uint8_t loop, uint8_t speed
 static void ControllerSetPadColorRGB(uint8_t padCt, uint8_t r, uint8_t g, uint8_t b) {
 
   // 0xF0, 0x00, 0x20, 0x29, 0x02, 0x0D, 0x03, 0x03 (Led Index) ( r) (g)  (b)
-  if ( padCt >= 64 ) return ;
 
   SX_LPMK3_LED_RGB_COLOR[8]  = padCt;
   SX_LPMK3_LED_RGB_COLOR[9]  = r ;
@@ -248,13 +269,6 @@ static int ControllerInitialize() {
 ///////////////////////////////////////////////////////////////////////////////
 // Get a Force pad index from a Launchpad index
 ///////////////////////////////////////////////////////////////////////////////
-static uint8_t ControllerGetForcePadNote(uint8_t padCt) {
-  return  ControllerGetForcePadIndex(padCt)  + FORCEPADS_NOTE_OFFSET;
-}
-
-///////////////////////////////////////////////////////////////////////////////
-// Get a Force pad index from a Launchpad index
-///////////////////////////////////////////////////////////////////////////////
 static uint8_t ControllerGetForcePadIndex(uint8_t padCt) {
   // Convert pad to Force pad #
   padCt -=  11;
@@ -264,13 +278,22 @@ static uint8_t ControllerGetForcePadIndex(uint8_t padCt) {
 }
 
 ///////////////////////////////////////////////////////////////////////////////
+// Get a Force pad index from a Launchpad index
+///////////////////////////////////////////////////////////////////////////////
+static uint8_t ControllerGetForcePadNote(uint8_t padCt) {
+  return  ControllerGetForcePadIndex(padCt)  + FORCEPADS_NOTE_OFFSET;
+}
+
+
+
+///////////////////////////////////////////////////////////////////////////////
 // Get a Controller pad index from a Force pad index
 ///////////////////////////////////////////////////////////////////////////////
 static int ControllerGetPadIndex(uint8_t padF) {
 
   if ( padF >= 64 ) return -1;
 
-  return  ( ( 7 - padF / 8 ) * 10 + 11 + padF % 8 );
+  return  ( ( 7 - padF / 8 ) * 10 + 11 + padF % 8 ) ;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -281,6 +304,12 @@ static void ControllerSetMapButtonLed(snd_seq_event_t *ev) {
     int mapVal = -1 ;
     int mapVal2 = -1;
 
+    // TAP LED is better at first ! Always updated....
+    if ( ev->data.control.param == FORCE_BT_TAP_TEMPO )  {
+          mapVal = CTRL_BT_LOGO;
+          mapVal2 = ev->data.control.value == 3 ?  CTRL_COLOR_RED_LT:00 ;
+    }
+  
     if ( ev->data.control.param == FORCE_BT_NOTE )       mapVal = CTRL_BT_KEYS;
     if ( ev->data.control.param == FORCE_BT_STEP_SEQ )   mapVal = CTRL_BT_USER;
 
@@ -310,7 +339,7 @@ static void ControllerSetMapButtonLed(snd_seq_event_t *ev) {
         mapVal = CTRL_BT_STOP_SM   ;
         CurrentSoloMode = FORCE_SM_MUTE ; // Resynchronize
         // Set color of "Stop Solo Mode button"
-        mapVal2 = CTRL_COLOR_ORANGE ;
+        mapVal2 = CTRL_COLOR_AMBER ;
       }
     }
 
