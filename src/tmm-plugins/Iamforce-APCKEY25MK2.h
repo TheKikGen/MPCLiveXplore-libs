@@ -111,6 +111,7 @@ uint8_t SX_APCK_LED_RGB_COLOR[] = {
 #define CTRL_COLOR_GREY 2
 #define CTRL_COLOR_WHITE 3
 #define CTRL_COLOR_RED 5
+#define CTRL_COLOR_RED_LT 0x07
 #define CTRL_COLOR_AMBER 9
 #define CTRL_COLOR_YELLOW 13
 #define CTRL_COLOR_LIME 17
@@ -346,29 +347,55 @@ static void ControllerSetMapButtonLed(snd_seq_event_t *ev) {
     int mapVal = -1 ;
     int mapVal2 = -1;
 
-    if ( ev->data.control.param == FORCE_BT_NOTE )       ;
-    if ( ev->data.control.param == FORCE_BT_STEP_SEQ )   ;
-
-    else if ( ev->data.control.param == FORCE_BT_LAUNCH )     ;
-    else if ( ev->data.control.param == FORCE_BT_MASTER )      ;
+    if ( ev->data.control.param != FORCE_BT_TAP_TEMPO)  tklog_debug("LED VALUE  %02X = %02X\n",ev->data.control.param,ev->data.control.value);   
 
 
-    else if ( ev->data.control.param == FORCE_BT_TAP_TEMPO )  {
-    //      mapVal = CTRL_BT_LOGO;
-      //    mapVal2 = ev->data.control.value == 3 ?  CTRL_COLOR_RED_LT:00 ;
-    }
-    else if ( ev->data.control.param == FORCE_BT_LAUNCH_1 )   mapVal = CTRL_BT_LAUNCH_1  ;
+    if      ( ev->data.control.param == FORCE_BT_LAUNCH_1 )   mapVal = CTRL_BT_LAUNCH_1  ;
     else if ( ev->data.control.param == FORCE_BT_LAUNCH_2 )   mapVal = CTRL_BT_LAUNCH_2  ;
     else if ( ev->data.control.param == FORCE_BT_LAUNCH_3 )   mapVal = CTRL_BT_LAUNCH_3  ;
     else if ( ev->data.control.param == FORCE_BT_LAUNCH_4 )   mapVal = CTRL_BT_LAUNCH_4  ;
     else if ( ev->data.control.param == FORCE_BT_LAUNCH_5 )   mapVal = CTRL_BT_LAUNCH_5  ;
+    
+    else if ( ev->data.control.param == FORCE_BT_COPY )   {
+      // LED : 0 = off, 1 low bright, 3 high bright
+      mapVal  = CTRL_BT_TRACK_1;
+      mapVal2 =  ev->data.control.value == 3 ? 0x7F:00 ;
+    }   
 
-    //else if ( ev->data.control.param == FORCE_BT_LAUNCH_7 )   mapVal = CTRL_BT_LAUNCH_7  ;
+    else if ( ev->data.control.param == FORCE_BT_DELETE )  {
+      mapVal = CTRL_BT_TRACK_2 ;
+      mapVal2 =  ev->data.control.value == 3 ? 0x7F:00;
+    }
 
-    //else if ( ev->data.control.param == FORCE_BT_RIGHT )  mapVal = CTRL_BT_RIGHT    ;
-    //else if ( ev->data.control.param == FORCE_BT_LEFT )   mapVal = CTRL_BT_LEFT   ;
-    //else if ( ev->data.control.param == FORCE_BT_UP )      ;
-    //else if ( ev->data.control.param == FORCE_BT_DOWN )     mapVal = CTRL_BT_DOWN ;
+    else if ( ev->data.control.param == FORCE_BT_EDIT )  {
+      mapVal = CTRL_BT_TRACK_3 ;
+      mapVal2 =  ev->data.control.value == 3 ? 0x7F:00;
+    }
+    
+    else if ( ev->data.control.param == FORCE_BT_STEP_SEQ )  {
+      mapVal = CTRL_BT_TRACK_4 ;
+      mapVal2 =  ev->data.control.value == 3 ? 0x7F:00;
+    }
+
+    else if ( ev->data.control.param == FORCE_BT_MIXER )  {
+      mapVal = CTRL_BT_TRACK_5 ;
+      mapVal2 =  ev->data.control.value == 3 ? 0x7F:00;
+    }
+
+    else if ( ev->data.control.param == FORCE_BT_LAUNCH )  {
+      mapVal = CTRL_BT_TRACK_6 ;
+      mapVal2 =  ev->data.control.value == 3 ? 0x7F:00;
+    }
+
+    else if ( ev->data.control.param == FORCE_BT_NOTE )  {
+      mapVal = CTRL_BT_TRACK_7 ;
+      mapVal2 =  ev->data.control.value == 3 ? 0x7F:00;
+    }
+
+    else if ( ev->data.control.param == FORCE_BT_MATRIX )  {
+      mapVal = CTRL_BT_TRACK_8 ;
+      mapVal2 =  ev->data.control.value == 3 ? 0x7F:00;
+    }
 
     else if ( ev->data.control.param == FORCE_BT_MUTE )   {
       if ( ev->data.control.value == 3 ) {
@@ -400,7 +427,7 @@ static void ControllerSetMapButtonLed(snd_seq_event_t *ev) {
         ev2.type = SND_SEQ_EVENT_NOTEON;
         ev2.data.note.channel = 0;
         ev2.data.note.note = mapVal;
-        ev2.data.note.velocity = ev->data.control.value;
+        ev2.data.note.velocity = mapVal2 >= 0 ? mapVal2:ev->data.control.value;
 
         SetMidiEventDestination(&ev2, TO_CTRL_EXT );
         SendMidiEvent(&ev2 );
