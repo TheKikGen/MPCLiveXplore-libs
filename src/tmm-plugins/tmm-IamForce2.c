@@ -80,9 +80,8 @@ extern TkRouter_t TkRouter;
 // Globals ---------------------------------------------------------------------
 
 // Sysex patterns.
-static const uint8_t AkaiSysex[]                  = {0xF0,0x47, 0x7F};
-static const uint8_t MPCSysexPadColorFn[]         = {0x65,0x00,0x04};
-static const uint8_t IdentityReplySysexHeader[]   = {0xF0,0x7E,0x00,0x06,0x02,0x47};
+static const uint8_t AkaiSysex[]                  = {AKAI_SYSEX_HEADER};
+static const uint8_t IdentityReplySysexHeader[]   = {AKAI_SYSEX_IDENTITY_REPLY_HEADER};
 
 // To navigate in matrix quadran when MPC spoofing a Force
 // 1 quadran is 4 MPC pads
@@ -130,7 +129,8 @@ static int ControllerInitialize();
 // Midi controller specific ----------------------------------------------------
 // Include here your own controller implementation
 
-#include "Iamforce-LPMK3.h"
+//#include "Iamforce-LPMK3.h"
+#include "Iamforce-APCKEY25MK2.h"
 
 // Midi controller specific END ------------------------------------------------
 
@@ -151,8 +151,15 @@ static void ForceSetPadColor(const uint8_t MPC_Id, const uint8_t padNumber, cons
   // Add the current product id
   sysexBuff[p++] = MPC_Id ;
 
+  // Add the fuunction Set Color
+
+  sysexBuff[p++] = FORCE_SX_SET_PAD_RGB ;
+
+  // Add the Len of msg
+  sysexBuff[p++] = 0;
+  sysexBuff[p++] = 4;
+
   // Add the pad color fn and pad number and color
-  memcpy(&sysexBuff[p], MPCSysexPadColorFn,sizeof(MPCSysexPadColorFn));
   sysexBuff[p++] = padNumber ;
 
   // #define COLOR_CORAL      00FF0077
@@ -406,6 +413,7 @@ void MidiMapperStart() {
   // MPC_Spoofed_Id = -1 by default (no spoofing)
 
   MPC_Spoofed_Id = MPC_FORCE ;
+
 }
 
 // -----------------------------------------------------------------------------
@@ -439,7 +447,7 @@ bool MidiMapper( uint8_t sender, snd_seq_event_t *ev, uint8_t *buffer, size_t si
        int i = 0;
        //tklog_info("Midi RAW Event received from MPC PUBLIC\n");
 
-       // Akai Sysex :  F0 47 7F [id] (...) F7
+       // Akai Sysex :  F0 47 7F [id] (Fn) (len MSB) (len LSB) (data) F7
        while ( buffer[i] == 0xF0 && buffer[i+1] == 0x47  && i < size ) {
 
           i += sizeof(AkaiSysex);
@@ -447,26 +455,39 @@ bool MidiMapper( uint8_t sender, snd_seq_event_t *ev, uint8_t *buffer, size_t si
           buffer[i++] = DeviceInfoBloc[MPC_Id].sysexId;
 
           // PAD COLOR
-          // Sysex : set pad color : FN  F0 47 7F [id] -> 65 00 04 [Pad #] [R] [G] [B] F7
-          if ( memcmp(&buffer[i],MPCSysexPadColorFn,sizeof(MPCSysexPadColorFn)) == 0 ) {
-            i += sizeof(MPCSysexPadColorFn) ;
+          // Sysex : set pad color : FN  F0 47 7F [id] -> 65 (00 04) [Pad #] [R] [G] [B] F7
+          if ( buffer[i] == FORCE_SX_SET_PAD_RGB ) {
+            //memcmp(&buffer[i],MPCSysexPadColorFn,sizeof(MPCSysexPadColorFn)) == 0 ) {
+            i ++;
 
-            uint8_t padF = buffer[i];
-            uint8_t padFL = padF / 8;
-            uint8_t padFC = padF % 8;
+            // Compute MSB + LSB len
+            uint16_t msgLen = ( buffer[i++] << 7 ) | buffer[i++];
 
-            buffer[i] = MPCGetPadIndex(buffer[i]);
-            i++;
+            //= sizeof(MPCSysexPadColorFn) ;
 
-            // Update Force pad color cache
-            Force_PadColorsCache[padF].c.r = buffer[i++];
-            Force_PadColorsCache[padF].c.g = buffer[i++];
-            Force_PadColorsCache[padF].c.b = buffer[i++];
+            uint8_t padF, padFL ,padFC ;
+            int padCt = -1 ;
 
-            if ( padF < 64 ) {
-              uint8_t padCt = ( ( 7 - padF / 8 ) * 10 + 11 + padF % 8 );
-              ControllerSetPadColorRGB(padCt, Force_PadColorsCache[padF].c.r, Force_PadColorsCache[padF].c.g,Force_PadColorsCache[padF].c.b);
+            // Manage mutliple set colors in the same sysex stream
+            while ( msgLen > 0 ) {
+              padF = buffer[i];
+              padFL = padF / 8;
+              padFC = padF % 8;
+              buffer[i] = MPCGetPadIndex(buffer[i]);
+              i++;
+
+              // Update Force pad color cache
+              Force_PadColorsCache[padF].c.r = buffer[i++];
+              Force_PadColorsCache[padF].c.g = buffer[i++];
+              Force_PadColorsCache[padF].c.b = buffer[i++];
+
+              //stklog_debug("PAD COLOR (len %d) (%d) %02X%02X%02X\n",msgLen,padF,Force_PadColorsCache[padF].c.r, Force_PadColorsCache[padF].c.g,Force_PadColorsCache[padF].c.b);
+              padCt = ControllerGetPadIndex(padF);
+              if ( padCt >=0 ) ControllerSetPadColorRGB(padCt, Force_PadColorsCache[padF].c.r, Force_PadColorsCache[padF].c.g,Force_PadColorsCache[padF].c.b);
+
+              msgLen -= 4 ;
             }
+
           }
 
           // Reach end of sysex to loop on the next sysex command
@@ -523,6 +544,9 @@ bool MidiMapper( uint8_t sender, snd_seq_event_t *ev, uint8_t *buffer, size_t si
 
                    if ( KnobShiftMode && DeviceInfoBloc[MPC_Id].qlinkKnobsCount == 4 ) ev->data.control.param +=  4 ;
                    else if ( ev->data.control.param > 0x17 ) return false;
+
+                   tklog_debug("Knob MPC %02x\n",ev->data.control.param);
+
              }
 
              break;
