@@ -105,7 +105,10 @@ show columns pads permanenently.
 // ----------------------------------------------------------------------------
 // Launchpad MK3 module for IamForce
 // ----------------------------------------------------------------------------
-#define LP_DEVICE_ID 0x0D
+
+#define LP_DEVICE_ID 0x0D // Launchpad Mini MK3
+//#define LP_DEVICE_ID 0x0C // Launchpad X
+
 #define LP_SYSEX_HEADER 0xF0,0x00,0x20,0x29,0x02, LP_DEVICE_ID
 
 #define CTRL_BT_UP 0x5B
@@ -183,6 +186,8 @@ static void ControllerScrollText(const char *message,uint8_t loop, uint8_t speed
 static void ControllerSetPadColorRGB(uint8_t padCt, uint8_t r, uint8_t g, uint8_t b) {
 
   // 0xF0, 0x00, 0x20, 0x29, 0x02, 0x0D, 0x03, 0x03 (Led Index) ( r) (g)  (b)
+  if ( padCt >= 64 ) return ;
+
   SX_LPMK3_LED_RGB_COLOR[8]  = padCt;
   SX_LPMK3_LED_RGB_COLOR[9]  = r ;
   SX_LPMK3_LED_RGB_COLOR[10] = g ;
@@ -225,7 +230,7 @@ static void ControllerRefreshPadsFromForceCache() {
 ///////////////////////////////////////////////////////////////////////////////
 static int ControllerInitialize() {
 
-  tklog_info("IamForce : Novation Launchpad Mini MK3 implementtion.\n");
+  tklog_info("IamForce : Novation Launchpad Mini MK3 implementation.\n");
   SeqSendRawMidi( TO_CTRL_EXT,  SX_LPMK3_STDL_MODE, sizeof(SX_LPMK3_STDL_MODE) );
   SeqSendRawMidi( TO_CTRL_EXT,  SX_LPMK3_DAW_CLEAR, sizeof(SX_LPMK3_DAW_CLEAR) );
   SeqSendRawMidi( TO_CTRL_EXT,  SX_LPMK3_PGM_MODE, sizeof(SX_LPMK3_PGM_MODE) );
@@ -244,11 +249,28 @@ static int ControllerInitialize() {
 // Get a Force pad index from a Launchpad index
 ///////////////////////////////////////////////////////////////////////////////
 static uint8_t ControllerGetForcePadNote(uint8_t padCt) {
+  return  ControllerGetForcePadIndex(padCt)  + FORCEPADS_NOTE_OFFSET;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// Get a Force pad index from a Launchpad index
+///////////////////////////////////////////////////////////////////////////////
+static uint8_t ControllerGetForcePadIndex(uint8_t padCt) {
   // Convert pad to Force pad #
   padCt -=  11;
   uint8_t padL  =  7 - padCt  /  10 ;
   uint8_t padC  =  padCt  %  10 ;
-  return  padL * 8 + padC + FORCEPADS_NOTE_OFFSET;
+  return  padL * 8 + padC ;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// Get a Controller pad index from a Force pad index
+///////////////////////////////////////////////////////////////////////////////
+static int ControllerGetPadIndex(uint8_t padF) {
+
+  if ( padF >= 64 ) return -1;
+
+  return  ( ( 7 - padF / 8 ) * 10 + 11 + padF % 8 );
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -380,12 +402,8 @@ static bool ControllerEventReceived(snd_seq_event_t *ev) {
           else {
 
             ColumnsPadMode = ( ev->data.control.value == 0x7F ) || ColumnsPadModeLocked ;
-            if ( ColumnsPadMode ) {
-              ControllerRefreshColumnsPads(true);
-            }
-            else {
-              ControllerRefreshColumnsPads(false);
-            }
+            ControllerRefreshColumnsPads(ColumnsPadMode);
+            return false;
           }
         }
 
