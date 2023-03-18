@@ -413,3 +413,5 @@ int SeqSendRawMidi( uint8_t destId,  const uint8_t *buffer, size_t size ) ;
 int SetMidiEventDestination(snd_seq_event_t *ev, uint8_t destId );
 int SendMidiEvent(snd_seq_event_t *ev );
 int GetSeqPortFromDestinationId(uint8_t destId );
+void SendDeviceKeyEvent(uint8_t key,uint8_t value);
+void SendDeviceKeyPress(uint8_t key);

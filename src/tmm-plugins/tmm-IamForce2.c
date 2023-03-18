@@ -66,6 +66,24 @@ IMAFORCE PLUGIN -- Force Emulation on MPC
 #define QUADRAN_4 36
 
 
+// IAMFORCE MACRO CC# on channel 16
+// 0x89 is undefined in midi list standard CC
+#define IAMFORCE_MACRO_CC 0x89
+#define IAMFORCE_MACRO_MIDICH 0x0F
+
+enum IamForceMacroCCValues { 
+IAMFORCE_MACRO_PLAY, 
+IAMFORCE_MACRO_REC, 
+IAMFORCE_MACRO_STOP, 
+IAMFORCE_MACRO_TAP, 
+IAMFORCE_MACRO_NEXT_SEQ,
+IAMFORCE_MACRO_PREV_SEQ,
+IAMFORCE_MACRO_FIRST_SEQ,
+IAMFORCE_MACRO_LAST_SEQ,
+IAMFORCE_MACRO_ARP,
+IAMFORCE_MACRO_UNDO,
+};
+
 // Force columns solo modes
 enum ForceSoloModes  {  FORCE_SM_MUTE, FORCE_SM_SOLO, FORCE_SM_REC_ARM, FORCE_SM_CLIP_STOP, FORCE_SM_END };
 
@@ -112,6 +130,11 @@ static const uint8_t SoloModeButtonMap [] = { FORCE_BT_MUTE,FORCE_BT_SOLO, FORCE
 static bool KnobShiftMode = false;
 static bool KnobTouch = false;
 
+// USed by next seq macro
+static int CurrentSequence = 0;
+static int CurrentMatrixVOffset=0;
+
+
 // Function prototypes ---------------------------------------------------------
 
 
@@ -125,6 +148,7 @@ static void MPCSetMapButton(snd_seq_event_t *ev) ;
 
 static bool ControllerEventReceived(snd_seq_event_t *ev);
 static int ControllerInitialize();
+static void IamForceMacro_NextSeq(int step);
 
 // Midi controller specific ----------------------------------------------------
 // Include here your own controller implementation
@@ -340,7 +364,7 @@ static void MPCSetMapButton(snd_seq_event_t *ev) {
       mapVal = ev->data.note.note - 1 ;
       KnobTouch = ( ev->data.note.velocity == 0x7F ) ;
 
-      tklog_debug("Knob touch = %s \n",KnobTouch ? "True":"False");
+      //tklog_debug("Knob touch = %s \n",KnobTouch ? "True":"False");
 
       if (  DeviceInfoBloc[MPC_Id].qlinkKnobsCount == 4 ) {
         if ( KnobShiftMode ) mapVal += 4;
@@ -389,13 +413,7 @@ static void MPCSetMapButton(snd_seq_event_t *ev) {
       ev->data.note.note = mapVal;
 
       // Check if we must send a SHIFT RELEASE event to avoid conflict with Force internal shift status
-      if ( shiftReleaseBefore ) {
-        snd_seq_event_t ev2 = *ev;
-        ev2.type = SND_SEQ_EVENT_NOTEON;
-        ev2.data.note.note = FORCE_BT_SHIFT ;
-        ev2.data.note.velocity = 0;
-        SendMidiEvent(&ev2 );
-      }
+      if ( shiftReleaseBefore ) SendDeviceKeyEvent(FORCE_BT_SHIFT,false);
 
       SendMidiEvent(ev );
 
@@ -403,9 +421,9 @@ static void MPCSetMapButton(snd_seq_event_t *ev) {
 
 }
 
-// -----------------------------------------------------------------------------
+///////////////////////////////////////////////////////////////////////////////
 // The MidiMapperStart() function is called before branching to MPC entry point
-// -----------------------------------------------------------------------------
+///////////////////////////////////////////////////////////////////////////////
 void MidiMapperStart() {
 
   // Set the spoofed product code to catch product code read and
@@ -416,9 +434,9 @@ void MidiMapperStart() {
 
 }
 
-// -----------------------------------------------------------------------------
+///////////////////////////////////////////////////////////////////////////////
 // The MidiMapperSetup() function is called when all ports initialized
-// -----------------------------------------------------------------------------
+///////////////////////////////////////////////////////////////////////////////
 void MidiMapperSetup() {
   tklog_info("IamForce :  Force emulation on MPC devices, by The Kikgen Labs - VBETA-Feb 2023\n");
 
@@ -431,14 +449,14 @@ void MidiMapperSetup() {
 
 }
 
-// -----------------------------------------------------------------------------
+///////////////////////////////////////////////////////////////////////////////
 // Midi mapper events processing
-// -----------------------------------------------------------------------------
+///////////////////////////////////////////////////////////////////////////////
 
 bool MidiMapper( uint8_t sender, snd_seq_event_t *ev, uint8_t *buffer, size_t size ) {
 
-  switch (sender) {
-
+   switch (sender) {
+ 
    // Event from PUBLIC MPC application rawmidi port
    // RAW MIDI. NO EVENT. USE BUFFER and SIZE (SYSEX)
    case FROM_MPC_PUBLIC:
@@ -457,7 +475,7 @@ bool MidiMapper( uint8_t sender, snd_seq_event_t *ev, uint8_t *buffer, size_t si
           // PAD COLOR
           // Sysex : set pad color : FN  F0 47 7F [id] -> 65 (00 04) [Pad #] [R] [G] [B] F7
           if ( buffer[i] == FORCE_SX_SET_PAD_RGB ) {
-            //memcmp(&buffer[i],MPCSysexPadColorFn,sizeof(MPCSysexPadColorFn)) == 0 ) {
+          
             i ++;
 
             // Compute MSB + LSB len
@@ -498,6 +516,7 @@ bool MidiMapper( uint8_t sender, snd_seq_event_t *ev, uint8_t *buffer, size_t si
 
        break;
      }
+   
    // Event from PRIVATE MPC application rawmidi port
    case FROM_MPC_PRIVATE:
        //tklog_info("Midi Event received from MPC PRIVATE\n");
@@ -524,7 +543,7 @@ bool MidiMapper( uint8_t sender, snd_seq_event_t *ev, uint8_t *buffer, size_t si
 
    // Event from MPC hardware internal controller
    case FROM_CTRL_MPC:
-       tklog_info("Midi Event received from CTRL MPC\n");
+       //tklog_info("Midi Event received from CTRL MPC\n");
 
        switch (ev->type ) {
 
@@ -544,9 +563,6 @@ bool MidiMapper( uint8_t sender, snd_seq_event_t *ev, uint8_t *buffer, size_t si
 
                    if ( KnobShiftMode && DeviceInfoBloc[MPC_Id].qlinkKnobsCount == 4 ) ev->data.control.param +=  4 ;
                    else if ( ev->data.control.param > 0x17 ) return false;
-
-                   tklog_debug("Knob MPC %02x\n",ev->data.control.param);
-
              }
 
              break;
@@ -570,10 +586,68 @@ bool MidiMapper( uint8_t sender, snd_seq_event_t *ev, uint8_t *buffer, size_t si
        }
        break;
 
-   // Event from MPC application port mapped with external controller
-
+   // Event from MPC application port mapped with external controller.
+   // This port is also used to catch specific CC mapping for global Force command macros
+   // By using the standard routing in the Force midi setting, it is possible 
+   // to send specific CC/channel 16 to the  port name = "TKGL_(your controller name)" to trig those commands.
+   
    case FROM_MPC_EXTCTRL:
        tklog_debug("Midi Event received from MPC EXCTRL\n");
+        if ( ev->type == SND_SEQ_EVENT_CONTROLLER ) {
+
+          // Is it one of our IAMFORCE macros on midi channel 16 ?
+          if (  ev->data.control.channel = IAMFORCE_MACRO_MIDICH && ev->data.control.param == IAMFORCE_MACRO_CC ) {
+                  tklog_debug("Macro received %02X %02X\n",ev->data.control.param,ev->data.control.value);
+
+                  switch (ev->data.control.value)
+                  {
+                  // CC 0x71 on channel 16
+
+                  case IAMFORCE_MACRO_PLAY: 
+                    SendDeviceKeyPress(FORCE_BT_PLAY);                    
+                    break;
+
+                  case IAMFORCE_MACRO_STOP:
+                    SendDeviceKeyPress(FORCE_BT_STOP);
+                    break;
+
+                  case IAMFORCE_MACRO_REC:
+                    SendDeviceKeyPress(FORCE_BT_REC);
+                    break;
+
+                  case IAMFORCE_MACRO_TAP:
+                    SendDeviceKeyPress(FORCE_BT_TAP_TEMPO);
+                    break;
+
+                  case IAMFORCE_MACRO_PREV_SEQ:
+                    IamForceMacro_NextSeq(-1);
+                    break;
+
+                  case IAMFORCE_MACRO_NEXT_SEQ:                
+                    IamForceMacro_NextSeq(1);
+                    break;
+
+                 case IAMFORCE_MACRO_FIRST_SEQ:
+                    IamForceMacro_NextSeq(-8);
+                    break;
+
+                 case IAMFORCE_MACRO_LAST_SEQ:
+                    IamForceMacro_NextSeq(8);
+                    break;
+
+                  case IAMFORCE_MACRO_ARP:
+                    SendDeviceKeyPress(FORCE_BT_ARP);
+                    break;
+
+                  case IAMFORCE_MACRO_UNDO:
+                    SendDeviceKeyPress(FORCE_BT_UNDO);
+                    break;
+
+                  }
+                  
+                  return false; // Never go back to MPC for macros...
+          }
+        }
 
        break;
 
@@ -585,4 +659,29 @@ bool MidiMapper( uint8_t sender, snd_seq_event_t *ev, uint8_t *buffer, size_t si
  }
  return true;
 
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// IAMFORCE macros
+///////////////////////////////////////////////////////////////////////////////
+
+static void IamForceMacro_NextSeq(int step) {
+
+  CurrentSequence += step;
+
+  if ( CurrentSequence > 7  ) {
+        CurrentSequence = 7;
+        CurrentMatrixVOffset++;
+        // Send a Matrix down button
+        SendDeviceKeyPress(FORCE_BT_DOWN);
+  }
+  else if ( CurrentSequence < 0 ) {
+    CurrentSequence = 0;
+    if ( CurrentMatrixVOffset ) {
+        CurrentMatrixVOffset--;
+        SendDeviceKeyPress(FORCE_BT_UP); 
+    }
+  }
+
+  SendDeviceKeyPress(FORCE_BT_LAUNCH_1 + CurrentSequence); 
 }
