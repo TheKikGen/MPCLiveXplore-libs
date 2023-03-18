@@ -506,20 +506,8 @@ static bool ControllerEventReceived(snd_seq_event_t *ev) {
 
         if ( mapVal >= 0 ) {
 
-            if ( CtrlShiftMode) {
+            SendDeviceKeyEvent(mapVal,ev->data.control.value);
 
-
-            }
-
-            snd_seq_event_t ev2 = *ev;
-            //snd_seq_ev_clear (&ev2);
-            // Reroute event to private MPC app port as a MPC button NOTE ON
-            ev2.type = SND_SEQ_EVENT_NOTEON;
-            ev2.data.note.channel = 0;
-            ev2.data.note.note = mapVal;
-            ev2.data.note.velocity = ev->data.control.value;
-            SetMidiEventDestination(&ev2,TO_MPC_PRIVATE );
-            SendMidiEvent(&ev2 );
             return false;
 
         }
@@ -546,22 +534,18 @@ static bool ControllerEventReceived(snd_seq_event_t *ev) {
 
             // Edit current track
             if ( padFL == 0 ) {
-              snd_seq_event_t ev2 = *ev;
 
-              ev2.data.note.note = FORCE_BT_EDIT ;
-              ev2.data.note.velocity  = ( ev->data.note.velocity > 0 ? 0x7F:00);
               ev->data.note.note = FORCE_BT_COLUMN_PAD1 + padFC ;
-              ev->data.note.velocity = ev2.data.note.velocity;
-
-              if ( ev2.data.note.velocity == 0x7F ) {
-                SendMidiEvent(&ev2); // Send Edit Press
+              ev->data.note.velocity = ( ev->data.note.velocity > 0 ? 0x7F:00);
+              
+              if ( ev->data.note.velocity == 0x7F ) {
+                SendDeviceKeyEvent(FORCE_BT_EDIT, 0x7F) ; // Send Edit Press
                 SendMidiEvent(ev); // Send Pad On
                 ev->data.note.velocity = 0 ;
                 SendMidiEvent(ev); // Send Pad off
               }
-              else {
-                SendMidiEvent(&ev2); // Send Edit Off
-              }
+              else SendDeviceKeyEvent(FORCE_BT_EDIT, 0); // Send Edit Off
+
               return false;
             }
 

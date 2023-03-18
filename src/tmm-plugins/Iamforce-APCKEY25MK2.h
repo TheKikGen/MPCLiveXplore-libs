@@ -46,6 +46,11 @@ MAPPING CONFIGURATION WITH FORCE BUTTONS AND FUNCTIONS - APC KEY 25 MK2
 // APC Key 25 MK2 module for IamForce
 // ----------------------------------------------------------------------------
 
+// TODO :
+// Manage Up Down of the 5 lines in the 8 lines matrix of the Force 
+
+
+
 // SYSEX
 
 #define SX_APCK_DEVICE_ID 0x4E
@@ -347,7 +352,7 @@ static void ControllerSetMapButtonLed(snd_seq_event_t *ev) {
     int mapVal = -1 ;
     int mapVal2 = -1;
 
-    if ( ev->data.control.param != FORCE_BT_TAP_TEMPO)  tklog_debug("LED VALUE  %02X = %02X\n",ev->data.control.param,ev->data.control.value);   
+    //if ( ev->data.control.param != FORCE_BT_TAP_TEMPO)  tklog_debug("LED VALUE  %02X = %02X\n",ev->data.control.param,ev->data.control.value);   
 
 
     if      ( ev->data.control.param == FORCE_BT_LAUNCH_1 )   mapVal = CTRL_BT_LAUNCH_1  ;
@@ -473,11 +478,11 @@ static bool ControllerEventReceived(snd_seq_event_t *ev) {
           SetMidiEventDestination(ev,TO_MPC_PRIVATE );
 
           uint8_t k = ev->data.control.param - CTRL_KNOB_1 ;
-          tklog_debug("Knob no %d\n",k);
+          //tklog_debug("Knob no %d\n",k);
 
           // Remap controller
           ev->data.control.param = FORCE_KN_QLINK_1 + k;
-          tklog_debug("Knob remap %02x\n",ev->data.control.param);
+          //tklog_debug("Knob remap %02x\n",ev->data.control.param);
 
           if ( lastKnob != k  ) {
             snd_seq_event_t ev2 = *ev;
