@@ -14,6 +14,10 @@ This LD_PRELOAD library allows you to reconfigure the keys inaccessible in midi 
 
 The language used to create plugins is C, for performance reasons. So you need to have some programming knowledge, and install an ARM C compiler (this will be the subject of a later post on the wiki). For example, I created a plugin for my A800 master keyboard to launch scenes 1 to 8 from pads 1 to 8, and mapped the play, stop, rec keys to the PLAY, STOP ALL, REC keys of my Force. It's very nice to be able to control the workflow from my master keyboard.
 
+Currently, 2 plugins are available :
+- IAMFORCE2-LPMK3.so to emulate a Force on a MPC with a Novation Lauchpad mini Mk3
+- IAMFORCE2-APCKEY-25 to emaule a Force on a MPC with the Akai APC Key 25 mk2 mini keyboard/pads
+
 See detailed documentation in the WIKI (TBD).
 
 NB: you need ssh access to your MPC.
