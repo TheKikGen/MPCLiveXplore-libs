@@ -70,7 +70,7 @@ IMAFORCE PLUGIN -- Force Emulation on MPC
 
 // IAMFORCE MACRO CC# on channel 16
 // 0x89 is undefined in midi list standard CC
-#define IAMFORCE_MACRO_CC 0x89
+#define IAMFORCE_MACRO_CC 89  
 #define IAMFORCE_MACRO_MIDICH 0x0F
 
 enum IamForceMacroCCValues { 
