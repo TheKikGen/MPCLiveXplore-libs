@@ -415,3 +415,5 @@ int SendMidiEvent(snd_seq_event_t *ev );
 int GetSeqPortFromDestinationId(uint8_t destId );
 void SendDeviceKeyEvent(uint8_t key,uint8_t value);
 void SendDeviceKeyPress(uint8_t key);
+static int ControllerGetPadIndex(uint8_t padF) ;
+

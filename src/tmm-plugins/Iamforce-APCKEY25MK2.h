@@ -46,10 +46,9 @@ MAPPING CONFIGURATION WITH FORCE BUTTONS AND FUNCTIONS - APC KEY 25 MK2
 // APC Key 25 MK2 module for IamForce
 // ----------------------------------------------------------------------------
 
-// TODO :
-// Manage Up Down of the 5 lines in the 8 lines matrix of the Force 
-
-
+#define IAMFORCE_DRIVER_VERSION "1.0"
+#define IAMFORCE_DRIVER_ID "APCKEY25-MK2"
+#define IAMFORCE_DRIVER_NAME "Akai APC Key 25 mk2"
 
 // SYSEX
 
@@ -109,6 +108,12 @@ uint8_t SX_APCK_LED_RGB_COLOR[] = {
 #define CTRL_PAD_NOTE_OFFSET 0x27
 #define CTRL_PAD_MAX_LINE 5
 #define CTRL_PAD_MAX_COL  8
+
+// Quadran 5 lines in the 8 lines Force matrix
+// Offset is computed from Force pespective (left top = 0)
+// 3 lines of 8 pads
+#define CTRL_BOTTOM_QUADRAN 3*8
+#define CTRL_TOP_QUADRAN 0
 
 // Standard colors
 #define CTRL_COLOR_BLACK 0
@@ -247,6 +252,9 @@ static void ControllerSetMultiPadsColorRGB(uint8_t padCtFrom, uint8_t padCtTo, u
   //  00 00 00 7F 00 00 00 00
   //  F7
 
+  // APC key colors range is 0 - 255. Force is 0 - 127
+  r <<= 1 ;  g <<= 1 ; b <<=  1;
+
   SX_APCK_LED_RGB_COLOR[7]  = padCtFrom;
   SX_APCK_LED_RGB_COLOR[8]  = padCtTo;
 
@@ -296,25 +304,42 @@ static void ControllerDrawPadsLineFromForceCache(uint8_t SrcForce, uint8_t DestC
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-// Refresh the pad surface from Force pad cache
+// Refresh the pad surface from Force pad cache within a quadran
 ///////////////////////////////////////////////////////////////////////////////
-static void ControllerRefreshPadsFromForceCache() {
+static void ControllerRefreshMatrixFromForceCache() {
 
-    for ( int i = 0 ; i< 64 ; i++) {
-
-      // Set pad for external controller eventually
-      uint8_t padCt = ( ( 7 - i / 8 ) * 10 + 11 + i % 8 );
-      ControllerSetPadColorRGB(padCt, Force_PadColorsCache[i].c.r, Force_PadColorsCache[i].c.g,Force_PadColorsCache[i].c.b);
+    int padCt = -1;
+    for ( int i = CtrlPadQuadran ; i< 64 ; i++) {
+      padCt = ControllerGetPadIndex(i - CtrlPadQuadran) ;
+      tklog_debug("RefreshMatrix Quadran %d padF %d padCt %d\n",CtrlPadQuadran,i,padCt );
+      if ( padCt >= 0 ) ControllerSetPadColorRGB(ControllerGetPadIndex(i - CtrlPadQuadran),  Force_PadColorsCache[i].c.r, Force_PadColorsCache[i].c.g,Force_PadColorsCache[i].c.b);
     }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// Refresh columns mode lines 7 & 8 on the LaunchPad
+///////////////////////////////////////////////////////////////////////////////
+static void ControllerRefreshColumnsPads(bool show) {
+  if ( show ) {
+    // Line 9 = track selection
+    // Line 8 = mute modes
+    ControllerDrawPadsLineFromForceCache(9,1);
+    ControllerDrawPadsLineFromForceCache(8,0);
+  }
+  else {
+    uint8_t ql = CtrlPadQuadran / 8;
+    // Restore initial pads color, but take care of the current quadran...
+    ControllerDrawPadsLineFromForceCache(3 + ql ,1);
+    ControllerDrawPadsLineFromForceCache(4 + ql ,0);
+  }
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 // Controller initialization
 ///////////////////////////////////////////////////////////////////////////////
 static int ControllerInitialize() {
-
-  tklog_info("IamForce : Akai APC Key 25 MK2 implementation.\n");
-
+  tklog_info("IamForce : %s implementation, version %s.\n",IAMFORCE_DRIVER_NAME,IAMFORCE_DRIVER_VERSION);
+  ControllerFillPadMatrixColorRGB(0x7F,0,0);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -339,9 +364,9 @@ static uint8_t ControllerGetForcePadNote(uint8_t padCt) {
 ///////////////////////////////////////////////////////////////////////////////
 static int ControllerGetPadIndex(uint8_t padF) {
 
-  if ( padF > CTRL_PAD_NOTE_OFFSET ) return -1;
+  if ( padF >= 64 ) return -1;
 
-  return  ( ( CTRL_PAD_MAX_LINE - 1 - padF / 8 ) * CTRL_PAD_MAX_COL + padF % 8 );
+  return  ( CTRL_PAD_MAX_LINE - 1 - padF / 8 ) * CTRL_PAD_MAX_COL + padF % 8 ;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -353,7 +378,6 @@ static void ControllerSetMapButtonLed(snd_seq_event_t *ev) {
     int mapVal2 = -1;
 
     //if ( ev->data.control.param != FORCE_BT_TAP_TEMPO)  tklog_debug("LED VALUE  %02X = %02X\n",ev->data.control.param,ev->data.control.value);   
-
 
     if      ( ev->data.control.param == FORCE_BT_LAUNCH_1 )   mapVal = CTRL_BT_LAUNCH_1  ;
     else if ( ev->data.control.param == FORCE_BT_LAUNCH_2 )   mapVal = CTRL_BT_LAUNCH_2  ;
@@ -440,21 +464,6 @@ static void ControllerSetMapButtonLed(snd_seq_event_t *ev) {
 
 }
 
-///////////////////////////////////////////////////////////////////////////////
-// Refresh columns mode lines 7 & 8 on the LaunchPad
-///////////////////////////////////////////////////////////////////////////////
-static void ControllerRefreshColumnsPads(bool show) {
-  if ( show ) {
-    // Line 9 = track selection
-    // Line 8 = mute modes
-    ControllerDrawPadsLineFromForceCache(9,1);
-    ControllerDrawPadsLineFromForceCache(8,0);
-  }
-  else {
-    ControllerDrawPadsLineFromForceCache(6,1);
-    ControllerDrawPadsLineFromForceCache(7,0);
-  }
-}
 
 ///////////////////////////////////////////////////////////////////////////////
 // Process an event received from the Launchpad
@@ -529,22 +538,34 @@ static bool ControllerEventReceived(snd_seq_event_t *ev) {
             return false;
           }
 
-          // UP / COPY
+          // UP / COPY / QUADRAN
           else if  ( ev->data.note.note == CTRL_BT_TRACK_1  ) {
-            mapVal = CtrlShiftMode ? FORCE_BT_UP : FORCE_BT_COPY  ;
+            // Quadran shift on / off
+            if ( ColumnsPadMode ) {
+              
+              if ( ev->data.note.velocity != 0 ) {
+                CtrlPadQuadran = ( CtrlPadQuadran == CTRL_TOP_QUADRAN ? CTRL_BOTTOM_QUADRAN: CTRL_TOP_QUADRAN ) ;
+                ControllerRefreshMatrixFromForceCache();
+              } 
+              else ControllerRefreshColumnsPads(ColumnsPadMode);
+
+              return false;
+            } 
+            else mapVal = CtrlShiftMode ? FORCE_BT_UP : FORCE_BT_COPY  ;
           }
+
           // DOWN / DELETE
           else if  ( ev->data.note.note == CTRL_BT_TRACK_2  ) {
             mapVal = CtrlShiftMode ? FORCE_BT_DOWN :FORCE_BT_DELETE ;
           }
-          // LEFT / EDIT
+          // Shit = LEFT / EDIT - Column mode : Assign A
           else if  ( ev->data.note.note == CTRL_BT_TRACK_3  ) {
-            mapVal = CtrlShiftMode ? FORCE_BT_LEFT : FORCE_BT_EDIT  ;
+            mapVal = ColumnsPadMode ? FORCE_BT_ASSIGN_A : ( CtrlShiftMode ? FORCE_BT_LEFT : FORCE_BT_EDIT ) ;
           }
 
-          // Right / Step Seq
+          // Right / Step Seq - Column mode : Assign B
           else if  ( ev->data.note.note == CTRL_BT_TRACK_4  ) {
-            mapVal = CtrlShiftMode ? FORCE_BT_RIGHT :FORCE_BT_STEP_SEQ ;
+            mapVal = ColumnsPadMode ? FORCE_BT_ASSIGN_B : ( mapVal = CtrlShiftMode ? FORCE_BT_RIGHT :FORCE_BT_STEP_SEQ );
           }
 
           // Volume / Mixer / Master
@@ -574,15 +595,15 @@ static bool ControllerEventReceived(snd_seq_event_t *ev) {
 
           // PLAY
           else if  ( ev->data.note.note == CTRL_BT_PLAY  ) {
-            mapVal = CtrlShiftMode ? FORCE_BT_STOP : FORCE_BT_PLAY ;
+            mapVal = FORCE_BT_PLAY ;
           }
 
           // Mute mode key
-          // "Stop all clips" is used to manage solo modes
-          // Shift => Knobs button
+          // "Stop all clips" is used to manage solo modes, and quadran
+          // Shift => Button STOP
 
           else if  ( ev->data.note.note == CTRL_BT_STOP_ALL_CLIPS  ) {
-            if ( CtrlShiftMode) mapVal = FORCE_BT_KNOBS ;
+            if ( CtrlShiftMode) mapVal = FORCE_BT_STOP ;
             else {
               ColumnsPadMode = ( ev->data.note.velocity == 0x7F ) || ColumnsPadModeLocked ;
               //tklog_debug("Column mode => %s \n", ColumnsPadMode ? "True":"False");
@@ -591,9 +612,10 @@ static bool ControllerEventReceived(snd_seq_event_t *ev) {
             }
           }
 
-          // Launch 5 / STOP ALL In COLUMN MODE
+          // Launch 5 (Select) / STOP ALL In COLUMN MODE / Shift = Knobs select
           else if  ( ev->data.note.note == CTRL_BT_LAUNCH_5  ) {
-            mapVal = ColumnsPadMode ? FORCE_BT_STOP_ALL : FORCE_BT_LAUNCH_5;
+            if ( CtrlShiftMode) mapVal = FORCE_BT_KNOBS ;
+            else mapVal = ColumnsPadMode ? FORCE_BT_STOP_ALL : FORCE_BT_LAUNCH_5;
           }
 
           // Launch 4 / REC ARM
@@ -642,6 +664,7 @@ static bool ControllerEventReceived(snd_seq_event_t *ev) {
           // APC Key 25 pads below 0x28
 
           // If controller column mode, simulate the columns and mutes pads
+          // and track edit with pads on line 0
           if ( ColumnsPadMode) {
 
               if ( ev->type == SND_SEQ_EVENT_KEYPRESS ) return false;
@@ -652,23 +675,20 @@ static bool ControllerEventReceived(snd_seq_event_t *ev) {
 
               // Edit current track
               if ( padFL == CTRL_PAD_MAX_LINE - 1 ) {
-                snd_seq_event_t ev2 = *ev;
 
-                ev2.data.note.note = FORCE_BT_EDIT ;
-                ev2.data.note.velocity  = ( ev->data.note.velocity > 0 ? 0x7F:00);
                 ev->data.note.note = FORCE_BT_COLUMN_PAD1 + padFC ;
-                ev->data.note.velocity = ev2.data.note.velocity;
+                ev->data.note.velocity  = ( ev->data.note.velocity > 0 ? 0x7F:00);
 
-                if ( ev2.data.note.velocity == 0x7F ) {
-                  SendMidiEvent(&ev2); // Send Edit Press
+                if ( ev->data.note.velocity == 0x7F ) {
+                  SendDeviceKeyEvent(FORCE_BT_EDIT, 0x7F) ; // Send Edit Press
                   SendMidiEvent(ev); // Send Pad On
                   ev->data.note.velocity = 0 ;
                   SendMidiEvent(ev); // Send Pad off
                 }
-                else {
-                  SendMidiEvent(&ev2); // Send Edit Off
-                }
+                else SendDeviceKeyEvent(FORCE_BT_EDIT, 0); // Send Edit Off
+
                 return false;
+                
               }
 
               else if ( padFL == 1 ) { // Column pads
@@ -684,7 +704,16 @@ static bool ControllerEventReceived(snd_seq_event_t *ev) {
           else
             {
               ev->data.note.channel = 9; // Simulate Note Force pad
-              ev->data.note.note = ControllerGetForcePadNote(ev->data.note.note);
+              // Take car of current quadran
+              ev->data.note.note = ControllerGetForcePadNote(ev->data.note.note) + CtrlPadQuadran;
+
+              // If Shift Mode, simulate Select key
+              if ( CtrlShiftMode ) {
+                SendDeviceKeyEvent(FORCE_BT_SELECT,true);
+                SendMidiEvent(ev);
+                SendDeviceKeyEvent(FORCE_BT_SELECT,false);
+                return false;
+              }
             }
         }
       }
