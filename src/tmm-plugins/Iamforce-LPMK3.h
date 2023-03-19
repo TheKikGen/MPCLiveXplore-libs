@@ -106,6 +106,10 @@ show columns pads permanenently.
 // Launchpad MK3 module for IamForce
 // ----------------------------------------------------------------------------
 
+#define IAMFORCE_DRIVER_VERSION "1.0"
+#define IAMFORCE_DRIVER_ID "LPMK3"
+#define IAMFORCE_DRIVER_NAME "Novation Launchpad Mini Mk3"
+
 #define LP_DEVICE_ID 0x0D // Launchpad Mini MK3
 //#define LP_DEVICE_ID 0x0C // Launchpad X
 
@@ -222,7 +226,7 @@ static void ControllerSetPadColorRGB(uint8_t padCt, uint8_t r, uint8_t g, uint8_
 ///////////////////////////////////////////////////////////////////////////////
 static void ControllerDrawPadsLineFromForceCache(uint8_t SrcForce, uint8_t DestCtrl) {
 
-    if ( DestCtrl > 7 ) return;
+    if ( DestCtrl >= CTRL_PAD_MAX_LINE ) return;
 
     uint8_t pf = SrcForce * 8 ;
     uint8_t pl = ( DestCtrl * 10 ) + 11;
@@ -236,7 +240,7 @@ static void ControllerDrawPadsLineFromForceCache(uint8_t SrcForce, uint8_t DestC
 ///////////////////////////////////////////////////////////////////////////////
 // Refresh the pad surface from Force pad cache
 ///////////////////////////////////////////////////////////////////////////////
-static void ControllerRefreshPadsFromForceCache() {
+static void ControllerRefreshMatrixFromForceCache() {
 
     for ( int i = 0 ; i< 64 ; i++) {
 
@@ -251,7 +255,8 @@ static void ControllerRefreshPadsFromForceCache() {
 ///////////////////////////////////////////////////////////////////////////////
 static int ControllerInitialize() {
 
-  tklog_info("IamForce : Novation Launchpad Mini MK3 implementation.\n");
+  tklog_info("IamForce : %s implementation, version %s.\n",IAMFORCE_DRIVER_NAME,IAMFORCE_DRIVER_VERSION);
+
   SeqSendRawMidi( TO_CTRL_EXT,  SX_LPMK3_STDL_MODE, sizeof(SX_LPMK3_STDL_MODE) );
   SeqSendRawMidi( TO_CTRL_EXT,  SX_LPMK3_DAW_CLEAR, sizeof(SX_LPMK3_DAW_CLEAR) );
   SeqSendRawMidi( TO_CTRL_EXT,  SX_LPMK3_PGM_MODE, sizeof(SX_LPMK3_PGM_MODE) );
