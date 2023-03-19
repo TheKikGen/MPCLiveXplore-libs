@@ -14,6 +14,12 @@ This LD_PRELOAD library allows you to reconfigure the keys inaccessible in midi 
 
 The language used to create plugins is C, for performance reasons. So you need to have some programming knowledge, and install an ARM C compiler (this will be the subject of a later post on the wiki). For example, I created a plugin for my A800 master keyboard to launch scenes 1 to 8 from pads 1 to 8, and mapped the play, stop, rec keys to the PLAY, STOP ALL, REC keys of my Force. It's very nice to be able to control the workflow from my master keyboard.
 
+Currently, 2 plugins are available :
+- IAMFORCE2-LPMK3.so to emulate a Force on a MPC with a Novation Lauchpad mini Mk3
+- IAMFORCE2-APCKEY-25 to emaule a Force on a MPC with the Akai APC Key 25 mk2 mini keyboard/pads
+
+See detailed documentation in the WIKI (TBD).
+
 NB: you need ssh access to your MPC.
 
 ### TKGL_ANYCTRL  TKGL_ANYCTRL_LT
@@ -157,6 +163,8 @@ hw:1,0,1 --> MPC      = F0 47 7F 3B 41 00 13 00 00 00 00 00 00 00 00 00  | .G.;A
 
 ## TKGL_MPCMAPPER
 
+(DEPRECATED - USE TKGL_MIDIMAPPER INSTEAD)
+
 This "low-level" library allows you to hijack the MPC/Force application to add your own midi mapping to input and output midi messages. 
 This library is used for the new version of IamForce, as mpcmapper allows to hack MPCs or Force 
 
@@ -179,6 +187,7 @@ You can use the following options on the LD_PRELOAD command line :
 A first derivative POC based on the anyctrl library allowed hardware identity spoofing.
 I used that to run the [Force MPC application on an MPC Live](https://github.com/TheKikGen/MPC-LiveXplore/wiki/Iamforce-:-a-MPC-Live-like-a-Force-proof-of-concept) connected to a 8x8 pads controlleur. 
 
-The new IamForce project is based on tkgl_mpcmapper
+The new IamForce project is based on tkgl_midimapper.
+See detailed documentation in the wiki (TBD).
 
 
