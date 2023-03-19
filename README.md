@@ -183,7 +183,7 @@ You can use the following options on the LD_PRELOAD command line :
 A first derivative POC based on the anyctrl library allowed hardware identity spoofing.
 I used that to run the [Force MPC application on an MPC Live](https://github.com/TheKikGen/MPC-LiveXplore/wiki/Iamforce-:-a-MPC-Live-like-a-Force-proof-of-concept) connected to a 8x8 pads controlleur. 
 
-The new IamForce project is based on tkgl_mpcmidimapper.
+The new IamForce project is based on tkgl_midimapper.
 See detailed documentation in the wiki (TBD).
 
 
