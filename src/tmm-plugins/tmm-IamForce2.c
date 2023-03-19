@@ -59,6 +59,8 @@ IMAFORCE PLUGIN -- Force Emulation on MPC
 
 // -----------------------------------------------------------------------------
 
+#define IAMFORCE_VERSION "V2.0 BETA"
+
 // MPC Quadran OFFSETS
 #define QUADRAN_1 0
 #define QUADRAN_2 4
@@ -133,6 +135,9 @@ static bool KnobTouch = false;
 // USed by next seq macro
 static int CurrentSequence = 0;
 static int CurrentMatrixVOffset=0;
+
+// Quadran for external controller (none by default)
+static int CtrlPadQuadran = 0;
 
 
 // Function prototypes ---------------------------------------------------------
@@ -438,7 +443,8 @@ void MidiMapperStart() {
 // The MidiMapperSetup() function is called when all ports initialized
 ///////////////////////////////////////////////////////////////////////////////
 void MidiMapperSetup() {
-  tklog_info("IamForce :  Force emulation on MPC devices, by The Kikgen Labs - VBETA-Feb 2023\n");
+  tklog_info("IamForce : Force emulation on MPC devices, by The Kikgen Labs\n");
+  tklog_info("IamForce : Version %s\n",IAMFORCE_VERSION);
 
   if ( strcmp(DeviceInfoBloc[MPC_Id].productCode,DeviceInfoBloc[MPC_FORCE].productCode) == 0  ) {
     tklog_fatal("You can't emulate a Force on a Force !!\n");
@@ -452,7 +458,6 @@ void MidiMapperSetup() {
 ///////////////////////////////////////////////////////////////////////////////
 // Midi mapper events processing
 ///////////////////////////////////////////////////////////////////////////////
-
 bool MidiMapper( uint8_t sender, snd_seq_event_t *ev, uint8_t *buffer, size_t size ) {
 
    switch (sender) {
@@ -500,8 +505,8 @@ bool MidiMapper( uint8_t sender, snd_seq_event_t *ev, uint8_t *buffer, size_t si
               Force_PadColorsCache[padF].c.b = buffer[i++];
 
               //stklog_debug("PAD COLOR (len %d) (%d) %02X%02X%02X\n",msgLen,padF,Force_PadColorsCache[padF].c.r, Force_PadColorsCache[padF].c.g,Force_PadColorsCache[padF].c.b);
-              padCt = ControllerGetPadIndex(padF);
-              if ( padCt >=0 ) ControllerSetPadColorRGB(padCt, Force_PadColorsCache[padF].c.r, Force_PadColorsCache[padF].c.g,Force_PadColorsCache[padF].c.b);
+              padCt = ControllerGetPadIndex(padF - CtrlPadQuadran);
+              if ( padCt >=0 ) ControllerSetPadColorRGB(padCt , Force_PadColorsCache[padF].c.r, Force_PadColorsCache[padF].c.g,Force_PadColorsCache[padF].c.b);
 
               msgLen -= 4 ;
             }
