@@ -160,8 +160,8 @@ static void IamForceMacro_NextSeq(int step);
 // Midi controller specific ----------------------------------------------------
 // Include here your own controller implementation
 
-//#include "Iamforce-NONE.h"
-#include "Iamforce-LPMK3.h"
+#include "Iamforce-NONE.h"
+//#include "Iamforce-LPMK3.h"
 //#include "Iamforce-APCKEY25MK2.h"
 
 // Midi controller specific END ------------------------------------------------
