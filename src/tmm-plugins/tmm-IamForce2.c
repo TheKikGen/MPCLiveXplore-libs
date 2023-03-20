@@ -62,10 +62,10 @@ IMAFORCE PLUGIN -- Force Emulation on MPC
 #define IAMFORCE_VERSION "V2.0 BETA"
 
 // MPC Quadran OFFSETS
-#define QUADRAN_1 0
-#define QUADRAN_2 4
-#define QUADRAN_3 32
-#define QUADRAN_4 36
+#define MPC_QUADRAN_1 0
+#define MPC_QUADRAN_2 4
+#define MPC_QUADRAN_3 32
+#define MPC_QUADRAN_4 36
 
 
 // IAMFORCE MACRO CC# on channel 16
@@ -93,9 +93,11 @@ enum ForceSoloModes  {  FORCE_SM_MUTE, FORCE_SM_SOLO, FORCE_SM_REC_ARM, FORCE_SM
 
 extern int MPC_Id ;
 extern int MPC_Spoofed_Id;
+
 extern const DeviceInfo_t DeviceInfoBloc[];
 extern snd_rawmidi_t *raw_outpub;
 extern TkRouter_t TkRouter;
+extern char ctrl_cli_name[] ;
 
 // Globals ---------------------------------------------------------------------
 
@@ -107,7 +109,7 @@ static const uint8_t IdentityReplySysexHeader[]   = {AKAI_SYSEX_IDENTITY_REPLY_H
 // 1 quadran is 4 MPC pads
 //  Q1 Q2
 //  Q3 Q4
-static int MPCPadQuadran = QUADRAN_3;
+static int MPCPadQuadran = MPC_QUADRAN_3;
 
 // Force Matrix pads color cache - 10 lines of 8 pads
 static RGBcolor_t Force_PadColorsCache[8*10];
@@ -158,8 +160,9 @@ static void IamForceMacro_NextSeq(int step);
 // Midi controller specific ----------------------------------------------------
 // Include here your own controller implementation
 
-//#include "Iamforce-LPMK3.h"
-#include "Iamforce-APCKEY25MK2.h"
+//#include "Iamforce-NONE.h"
+#include "Iamforce-LPMK3.h"
+//#include "Iamforce-APCKEY25MK2.h"
 
 // Midi controller specific END ------------------------------------------------
 
@@ -323,7 +326,6 @@ static void MPCSetMapButtonLed(snd_seq_event_t *ev) {
 
 }
 
-
 ///////////////////////////////////////////////////////////////////////////////
 // Set a mapped MPC button  to a Force button
 ///////////////////////////////////////////////////////////////////////////////
@@ -431,20 +433,24 @@ static void MPCSetMapButton(snd_seq_event_t *ev) {
 ///////////////////////////////////////////////////////////////////////////////
 void MidiMapperStart() {
 
-  // Set the spoofed product code to catch product code read and
-  // power supply status access.
-  // MPC_Spoofed_Id = -1 by default (no spoofing)
+  tklog_info("IamForce : Force emulation on MPC devices, by The Kikgen Labs\n");
+  tklog_info("IamForce : Version %s\n",IAMFORCE_VERSION);
 
-  MPC_Spoofed_Id = MPC_FORCE ;
+  // Set the spoofed product code to catch product code read and power supply status access.
+   MPC_Spoofed_Id = MPC_FORCE ;
 
+  // Check if a client name was given on the command line
+  if (ctrl_cli_name[0] == 0) {
+    strcpy(ctrl_cli_name,IAMFORCE_ALSASEQ_DEFAULT_CLIENT_NAME);
+    if (TkRouter.Ctrl.port < 0 ) TkRouter.Ctrl.port = IAMFORCE_ALSASEQ_DEFAULT_PORT;
+    tklog_info("IamForce : Default client name (%s) and port (%d) will be used.\n",ctrl_cli_name,TkRouter.Ctrl.port);
+  }
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 // The MidiMapperSetup() function is called when all ports initialized
 ///////////////////////////////////////////////////////////////////////////////
 void MidiMapperSetup() {
-  tklog_info("IamForce : Force emulation on MPC devices, by The Kikgen Labs\n");
-  tklog_info("IamForce : Version %s\n",IAMFORCE_VERSION);
 
   if ( strcmp(DeviceInfoBloc[MPC_Id].productCode,DeviceInfoBloc[MPC_FORCE].productCode) == 0  ) {
     tklog_fatal("You can't emulate a Force on a Force !!\n");
@@ -597,7 +603,7 @@ bool MidiMapper( uint8_t sender, snd_seq_event_t *ev, uint8_t *buffer, size_t si
    // to send specific CC/channel 16 to the  port name = "TKGL_(your controller name)" to trig those commands.
    
    case FROM_MPC_EXTCTRL:
-       tklog_debug("Midi Event received from MPC EXCTRL\n");
+       //tklog_debug("Midi Event received from MPC EXCTRL\n");
         if ( ev->type == SND_SEQ_EVENT_CONTROLLER ) {
 
           // Is it one of our IAMFORCE macros on midi channel 16 ?
@@ -659,7 +665,7 @@ bool MidiMapper( uint8_t sender, snd_seq_event_t *ev, uint8_t *buffer, size_t si
    // Event from external controller HARDWARE
 
    case FROM_CTRL_EXT:
-       tklog_debug("Midi Event received from CTRL EXT\n");
+       //tklog_debug("Midi Event received from CTRL EXT\n");
        return ControllerEventReceived(ev);
  }
  return true;

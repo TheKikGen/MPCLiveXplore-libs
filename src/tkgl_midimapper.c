@@ -136,7 +136,7 @@ static char mpc_midi_private_alsa_name[20];
 static char mpc_midi_public_alsa_name[20];
 
 // Our midi controller port name
-static char ctrl_cli_name[128] ;
+char ctrl_cli_name[128] ;
 static char ctrl_port_name[128] ;
 static char ctrl_router_port_name[128] ;
 

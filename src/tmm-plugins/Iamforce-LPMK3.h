@@ -7,10 +7,9 @@ __ __| |           |  /_) |     ___|             |           |
 TKGL_MIDIMAPPER  custom mapping library .
 This is a custom midi mapping library for TKGL_MIDIMAPPER LD_PRELOAD library
 
+----------------------------------------------------------------------------
 LAUNCHPAD MINI MK3 FOR IAMFORCE
-BASED ON THE DEFAULT USER CONFIGURATION
-
------------------------------------------------------------------------------
+----------------------------------------------------------------------------
 
   Disclaimer.
   This work is licensed under the Creative Commons Attribution-NonCommercial 4.0 International License.
@@ -102,13 +101,11 @@ show columns pads permanenently.
 -------------------------------------------------------------------------------
 */
 
-// ----------------------------------------------------------------------------
-// Launchpad MK3 module for IamForce
-// ----------------------------------------------------------------------------
-
 #define IAMFORCE_DRIVER_VERSION "1.0"
 #define IAMFORCE_DRIVER_ID "LPMK3"
 #define IAMFORCE_DRIVER_NAME "Novation Launchpad Mini Mk3"
+#define IAMFORCE_ALSASEQ_DEFAULT_CLIENT_NAME "Launchpad Mini MK3"
+#define IAMFORCE_ALSASEQ_DEFAULT_PORT 1
 
 #define LP_DEVICE_ID 0x0D // Launchpad Mini MK3
 //#define LP_DEVICE_ID 0x0C // Launchpad X
