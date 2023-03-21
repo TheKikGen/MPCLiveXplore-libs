@@ -202,6 +202,65 @@ static void ControllerRefreshMatrixFromForceCache() {
     }
 }
 
+
+///////////////////////////////////////////////////////////////////////////////
+// Return a ctrl led value from Force Launch button led
+///////////////////////////////////////////////////////////////////////////////
+static uint8_t ControllerGetLaunchLedValue(uint8_t ledF) {
+
+// Force led : 
+// 0 : Off  1-0x7F : Fixed on   2 : Blink
+  switch (ledF)
+  {
+    case 0:  
+      break;
+    case 3: 
+    case 4:  
+      ledF = 2;    
+      break;  
+    default:
+      ledF = 1;    
+      break;
+  }
+
+  return ledF;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// Return a Force launch button value from Ctrl Launch button within a quadran
+///////////////////////////////////////////////////////////////////////////////
+static uint8_t ControllerGetForceLaunchBt(uint8_t btCt) {
+
+  return FORCE_BT_LAUNCH_1 +  CtrlPadQuadran / 8 + btCt - CTRL_BT_LAUNCH_1  ;
+
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// Refresh launch buttons leds from Force leds cache within a quadran
+///////////////////////////////////////////////////////////////////////////////
+static void ControllerRefreshLaunchLedsFromForceCache() {
+
+    uint8_t ql = CtrlPadQuadran / 8 ;
+    uint8_t b = CTRL_BT_LAUNCH_1;
+
+    snd_seq_event_t ev;
+    ev.data.note.channel = 0;
+    ev.type = SND_SEQ_EVENT_NOTEON;
+    SetMidiEventDestination(&ev, TO_CTRL_EXT );
+
+    for ( int i = 0 ; i < 8 ; i++) {
+      if ( i >= ql ) {
+        if ( b <= CTRL_BT_LAUNCH_5 ) {
+          tklog_debug("ql %d Boutton b = %02X / %02X Force led value %d\n",ql,b,i,Force_ButtonLedsCache[FORCE_BT_LAUNCH_1 + i]);
+            ev.data.note.note = b++ ;
+            ev.data.note.velocity = ControllerGetLaunchLedValue( Force_ButtonLedsCache[FORCE_BT_LAUNCH_1 + i]);      
+            SendMidiEvent(&ev );
+        } 
+        else break;
+      }
+    }
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 // Refresh columns mode lines 7 & 8 on the LaunchPad
 ///////////////////////////////////////////////////////////////////////////////
@@ -255,6 +314,7 @@ static int ControllerGetPadIndex(uint8_t padF) {
   return  ( CTRL_PAD_MAX_LINE - 1 - padF / 8 ) * CTRL_PAD_MAX_COL + padF % 8 ;
 }
 
+
 ///////////////////////////////////////////////////////////////////////////////
 // Map LED lightning messages from Force with Launchpad buttons leds colors
 ///////////////////////////////////////////////////////////////////////////////
@@ -265,11 +325,21 @@ static void ControllerSetMapButtonLed(snd_seq_event_t *ev) {
 
     //if ( ev->data.control.param != FORCE_BT_TAP_TEMPO)  tklog_debug("LED VALUE  %02X = %02X\n",ev->data.control.param,ev->data.control.value);   
 
-    if      ( ev->data.control.param == FORCE_BT_LAUNCH_1 )   mapVal = CTRL_BT_LAUNCH_1  ;
-    else if ( ev->data.control.param == FORCE_BT_LAUNCH_2 )   mapVal = CTRL_BT_LAUNCH_2  ;
-    else if ( ev->data.control.param == FORCE_BT_LAUNCH_3 )   mapVal = CTRL_BT_LAUNCH_3  ;
-    else if ( ev->data.control.param == FORCE_BT_LAUNCH_4 )   mapVal = CTRL_BT_LAUNCH_4  ;
-    else if ( ev->data.control.param == FORCE_BT_LAUNCH_5 )   mapVal = CTRL_BT_LAUNCH_5  ;
+    if      ( ev->data.control.param >= FORCE_BT_LAUNCH_1  && ev->data.control.param <= FORCE_BT_LAUNCH_8 )   {
+
+      tklog_debug("LED VALUE  %02X = %02X\n",ev->data.control.param,ev->data.control.value);   
+
+      mapVal2 = ControllerGetLaunchLedValue(ev->data.control.value);
+      uint8_t b = ev->data.control.param - FORCE_BT_LAUNCH_1;
+      uint8_t ql = CtrlPadQuadran / 8;
+      
+      if ( b >= ql ) {
+        
+        mapVal = CTRL_BT_LAUNCH_1 + b - ql ; 
+
+      }
+      else return;
+    }
     
     else if ( ev->data.control.param == FORCE_BT_COPY )   {
       // LED : 0 = off, 1 low bright, 3 high bright
@@ -432,6 +502,7 @@ static bool ControllerEventReceived(snd_seq_event_t *ev) {
               if ( ev->data.note.velocity != 0 ) {
                 CtrlPadQuadran = ( CtrlPadQuadran == CTRL_TOP_QUADRAN ? CTRL_BOTTOM_QUADRAN: CTRL_TOP_QUADRAN ) ;
                 ControllerRefreshMatrixFromForceCache();
+                ControllerRefreshLaunchLedsFromForceCache();
               } 
               else ControllerRefreshColumnsPads(ColumnsPadMode);
 
@@ -501,7 +572,7 @@ static bool ControllerEventReceived(snd_seq_event_t *ev) {
           // Launch 5 (Select) / STOP ALL In COLUMN MODE / Shift = Knobs select
           else if  ( ev->data.note.note == CTRL_BT_LAUNCH_5  ) {
             if ( CtrlShiftMode) mapVal = FORCE_BT_KNOBS ;
-            else mapVal = ColumnsPadMode ? FORCE_BT_STOP_ALL : FORCE_BT_LAUNCH_5;
+            else mapVal = ColumnsPadMode ? FORCE_BT_STOP_ALL : ControllerGetForceLaunchBt(ev->data.note.note);
           }
 
           // Launch 4 / REC ARM
@@ -510,7 +581,7 @@ static bool ControllerEventReceived(snd_seq_event_t *ev) {
               CurrentSoloMode = FORCE_SM_REC_ARM ;
               mapVal = SoloModeButtonMap[CurrentSoloMode];
             }
-            else  mapVal = FORCE_BT_LAUNCH_4 ;
+            else  mapVal = ControllerGetForceLaunchBt(ev->data.note.note) ;
           }
 
           // Launch 3 / Mute
@@ -519,7 +590,7 @@ static bool ControllerEventReceived(snd_seq_event_t *ev) {
               CurrentSoloMode = FORCE_SM_MUTE ;
               mapVal = SoloModeButtonMap[CurrentSoloMode];
             }
-            else  mapVal = FORCE_BT_LAUNCH_3 ;
+            else  mapVal = ControllerGetForceLaunchBt(ev->data.note.note) ;
           }
 
           // Launch 2 / Solo
@@ -528,7 +599,7 @@ static bool ControllerEventReceived(snd_seq_event_t *ev) {
               CurrentSoloMode = FORCE_SM_SOLO ;
               mapVal = SoloModeButtonMap[CurrentSoloMode];
             }
-            else  mapVal = FORCE_BT_LAUNCH_2 ;
+            else  mapVal = ControllerGetForceLaunchBt(ev->data.note.note) ;
           }
 
           // Launch 1 / Clip Stop
@@ -537,7 +608,7 @@ static bool ControllerEventReceived(snd_seq_event_t *ev) {
               CurrentSoloMode = FORCE_SM_CLIP_STOP ;
               mapVal = SoloModeButtonMap[CurrentSoloMode];
             }
-            else  mapVal = FORCE_BT_LAUNCH_1 ;
+            else  mapVal = ControllerGetForceLaunchBt(ev->data.note.note) ;
           }
 
           if ( mapVal >= 0 ) {

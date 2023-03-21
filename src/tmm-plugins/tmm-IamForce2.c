@@ -114,6 +114,9 @@ static int MPCPadQuadran = MPC_QUADRAN_3;
 // Force Matrix pads color cache - 10 lines of 8 pads
 static RGBcolor_t Force_PadColorsCache[8*10];
 
+// Force Button leds cache
+static uint8_t Force_ButtonLedsCache[128];
+
 // SHIFT Holded mode
 // Holding shift will activate the shift mode
 static bool ShiftMode=false;
@@ -160,9 +163,9 @@ static void IamForceMacro_NextSeq(int step);
 // Midi controller specific ----------------------------------------------------
 // Include here your own controller implementation
 
-#include "Iamforce-NONE.h"
+//#include "Iamforce-NONE.h"
 //#include "Iamforce-LPMK3.h"
-//#include "Iamforce-APCKEY25MK2.h"
+#include "Iamforce-APCKEY25MK2.h"
 
 // Midi controller specific END ------------------------------------------------
 
@@ -445,6 +448,10 @@ void MidiMapperStart() {
     if (TkRouter.Ctrl.port < 0 ) TkRouter.Ctrl.port = IAMFORCE_ALSASEQ_DEFAULT_PORT;
     tklog_info("IamForce : Default client name (%s) and port (%d) will be used.\n",ctrl_cli_name,TkRouter.Ctrl.port);
   }
+
+  memset( Force_ButtonLedsCache, 0, sizeof(Force_ButtonLedsCache) );
+  memset( Force_PadColorsCache, 0 ,  sizeof(RGBcolor_t) * 8 * 10 );
+  
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -536,6 +543,9 @@ bool MidiMapper( uint8_t sender, snd_seq_event_t *ev, uint8_t *buffer, size_t si
          case SND_SEQ_EVENT_CONTROLLER:
            // Button Led
            if ( ev->data.control.channel == 0 ) {
+
+             // Save Led status in cache
+             Force_ButtonLedsCache[ev->data.control.param] = ev->data.control.value;
 
              // Map with controller leds. Will send a midi msg to the controller
              ControllerSetMapButtonLed(ev);
