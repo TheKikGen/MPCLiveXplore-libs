@@ -1007,7 +1007,7 @@ static void tkgl_init()
   if ( ctrl_cli_name[0] != 0 ) {
 
     if ( GetSeqClientFromPortName(ctrl_cli_name,0,&TkRouter.Ctrl.card,&TkRouter.Ctrl.cli, 0 ) < 0 ) {
-      tklog_fatal("Error : External controller card/seq client not found (regex pattern is '%s') , and will be ignored.\n",ctrl_cli_name);
+      tklog_error("Error : External controller card/seq client not found (regex pattern is '%s') , and will be ignored.\n",ctrl_cli_name);
       TkRouter.Ctrl.card = TkRouter.Ctrl.cli = TkRouter.Ctrl.port = -1;
     }
     else if ( GetSeqClientPortName(TkRouter.Ctrl.cli,TkRouter.Ctrl.port,ctrl_cli_name,ctrl_port_name) < 0 ) {
