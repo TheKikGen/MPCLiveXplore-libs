@@ -367,12 +367,12 @@ static void ControllerSetMapButtonLed(snd_seq_event_t *ev) {
       mapVal2 =  ev->data.control.value == 3 ? 0x7F:00;
     }
 
-    else if ( ev->data.control.param == FORCE_BT_LAUNCH )  {
+    else if ( ev->data.control.param == FORCE_BT_NOTE )  {
       mapVal = CTRL_BT_TRACK_6 ;
       mapVal2 =  ev->data.control.value == 3 ? 0x7F:00;
     }
 
-    else if ( ev->data.control.param == FORCE_BT_NOTE )  {
+    else if ( ev->data.control.param == FORCE_BT_LAUNCH )  {
       mapVal = CTRL_BT_TRACK_7 ;
       mapVal2 =  ev->data.control.value == 3 ? 0x7F:00;
     }
@@ -530,17 +530,17 @@ static bool ControllerEventReceived(snd_seq_event_t *ev) {
             mapVal = CtrlShiftMode ? FORCE_BT_MASTER : FORCE_BT_MIXER ;
           }
 
-          // Pan / Launch
+          // Pan / Note
           else if  ( ev->data.note.note == CTRL_BT_TRACK_6  ) {
-             mapVal = FORCE_BT_LAUNCH ;
-          }
-
-          // Send / Note
-          else if  ( ev->data.note.note == CTRL_BT_TRACK_7  ) {
              mapVal = FORCE_BT_NOTE ;
           }
 
-          //  Device / Menu / Matrix
+          // Send / Launch
+          else if  ( ev->data.note.note == CTRL_BT_TRACK_7  ) {
+             mapVal = FORCE_BT_LAUNCH ;
+          }
+
+          //  Device / Matrix / Menu
           else if  ( ev->data.note.note == CTRL_BT_TRACK_8  ) {
              mapVal = CtrlShiftMode ? FORCE_BT_MENU:FORCE_BT_MATRIX ;
           }
