@@ -40,6 +40,11 @@ AKAI APC MINI MK2  FOR IAMFORCE
 #define IAMFORCE_ALSASEQ_DEFAULT_CLIENT_NAME "APC Mini mk2"
 #define IAMFORCE_ALSASEQ_DEFAULT_PORT 1
 
+
+// DEBUG
+//#define SX_APCK_DEVICE_ID 0x4E
+//#define IAMFORCE_ALSASEQ_DEFAULT_CLIENT_NAME "APC Key 25 mk2"
+
 // SYSEX
 
 #define SX_APCK_DEVICE_ID 0x4F
@@ -191,11 +196,33 @@ static void ControllerRefreshMatrixFromForceCache() {
     int padCt = -1;
     for ( int i = CtrlPadQuadran ; i< 64 ; i++) {
       padCt = ControllerGetPadIndex(i - CtrlPadQuadran) ;
-      tklog_debug("RefreshMatrix Quadran %d padF %d padCt %d\n",CtrlPadQuadran,i,padCt );
+      //tklog_debug("RefreshMatrix Quadran %d padF %d padCt %d\n",CtrlPadQuadran,i,padCt );
       if ( padCt >= 0 ) ControllerSetPadColorRGB(ControllerGetPadIndex(i - CtrlPadQuadran),  Force_PadColorsCache[i].c.r, Force_PadColorsCache[i].c.g,Force_PadColorsCache[i].c.b);
     }
 }
 
+///////////////////////////////////////////////////////////////////////////////
+// Return a ctrl led value from Force Launch button led
+///////////////////////////////////////////////////////////////////////////////
+static uint8_t ControllerGetLaunchLedValue(uint8_t ledF) {
+
+// Force led : 
+// 0 : Off  1-0x7F : Fixed on   2 : Blink
+  switch (ledF)
+  {
+    case 0:  
+      break;
+    case 3: 
+    case 4:  
+      ledF = 2;    
+      break;  
+    default:
+      ledF = 1;    
+      break;
+  }
+
+  return ledF;
+}
 ///////////////////////////////////////////////////////////////////////////////
 // Refresh columns mode lines 7 & 8 on the LaunchPad
 ///////////////////////////////////////////////////////////////////////////////
@@ -207,7 +234,6 @@ static void ControllerRefreshColumnsPads(bool show) {
     ControllerDrawPadsLineFromForceCache(8,0);
   }
   else {
-    //uint8_t ql = CtrlPadQuadran / 8;
     // Restore initial pads color, but take care of the current quadran...
     ControllerDrawPadsLineFromForceCache( 6,1);
     ControllerDrawPadsLineFromForceCache( 7,0);
@@ -259,12 +285,21 @@ static void ControllerSetMapButtonLed(snd_seq_event_t *ev) {
 
     //if ( ev->data.control.param != FORCE_BT_TAP_TEMPO)  tklog_debug("LED VALUE  %02X = %02X\n",ev->data.control.param,ev->data.control.value);   
 
-    if      ( ev->data.control.param == FORCE_BT_LAUNCH_1 )   mapVal = CTRL_BT_LAUNCH_1  ;
-    else if ( ev->data.control.param == FORCE_BT_LAUNCH_2 )   mapVal = CTRL_BT_LAUNCH_2  ;
-    else if ( ev->data.control.param == FORCE_BT_LAUNCH_3 )   mapVal = CTRL_BT_LAUNCH_3  ;
-    else if ( ev->data.control.param == FORCE_BT_LAUNCH_4 )   mapVal = CTRL_BT_LAUNCH_4  ;
-    else if ( ev->data.control.param == FORCE_BT_LAUNCH_5 )   mapVal = CTRL_BT_LAUNCH_5  ;
-    
+    if      ( ev->data.control.param >= FORCE_BT_LAUNCH_1  && ev->data.control.param <= FORCE_BT_LAUNCH_8 )   {
+
+      //tklog_debug("LED VALUE  %02X = %02X\n",ev->data.control.param,ev->data.control.value);   
+
+      mapVal2 = ControllerGetLaunchLedValue(ev->data.control.value);
+      uint8_t b = ev->data.control.param - FORCE_BT_LAUNCH_1;
+      uint8_t ql = CtrlPadQuadran / 8;
+      
+      if ( b >= ql ) {
+        
+        mapVal = CTRL_BT_LAUNCH_1 + b - ql ; 
+
+      }
+      else return;
+    }
 
     else if ( ev->data.control.param == FORCE_BT_MIXER )  {
       mapVal = CTRL_BT_TRACK_1 ;
@@ -357,49 +392,45 @@ static bool ControllerEventReceived(snd_seq_event_t *ev) {
       break;
 
     case SND_SEQ_EVENT_CONTROLLER:
-    {
-
       if ( ev->data.control.channel == 0 ) {
 
         // Knob 1 - 8
-        if ( ev->data.control.param >= CTRL_KNOB_1 && ev->data.control.param  <= CTRL_KNOB_8 ) {
+        // if ( ev->data.control.param >= CTRL_KNOB_1 && ev->data.control.param  <= CTRL_KNOB_8 ) {
 
-          static uint8_t lastKnob = 0xFF;
+        //   static uint8_t lastKnob = 0xFF;
 
-          SetMidiEventDestination(ev,TO_MPC_PRIVATE );
+        //   SetMidiEventDestination(ev,TO_MPC_PRIVATE );
 
-          uint8_t k = ev->data.control.param - CTRL_KNOB_1 ;
-          //tklog_debug("Knob no %d\n",k);
+        //   uint8_t k = ev->data.control.param - CTRL_KNOB_1 ;
+        //   //tklog_debug("Knob no %d\n",k);
 
-          // Remap controller
-          ev->data.control.param = FORCE_KN_QLINK_1 + k;
-          //tklog_debug("Knob remap %02x\n",ev->data.control.param);
+        //   // Remap controller
+        //   ev->data.control.param = FORCE_KN_QLINK_1 + k;
+        //   //tklog_debug("Knob remap %02x\n",ev->data.control.param);
 
-          if ( lastKnob != k  ) {
-            snd_seq_event_t ev2 = *ev;
-            ev2.data.note.channel = 0;
-            SetMidiEventDestination(&ev2,TO_MPC_PRIVATE );
+        //   if ( lastKnob != k  ) {
+        //     snd_seq_event_t ev2 = *ev;
+        //     ev2.data.note.channel = 0;
+        //     SetMidiEventDestination(&ev2,TO_MPC_PRIVATE );
 
-            if ( lastKnob != 0xFF) {
-              // Simulate an "untouch", but not the first time
-              ev2.type = SND_SEQ_EVENT_NOTEOFF;
-              ev2.data.note.velocity = 0x00;
-              ev2.data.note.note = FORCE_BT_QLINK1_TOUCH + lastKnob ;
-              SendMidiEvent(&ev2 );
-            }
+        //     if ( lastKnob != 0xFF) {
+        //       // Simulate an "untouch", but not the first time
+        //       ev2.type = SND_SEQ_EVENT_NOTEOFF;
+        //       ev2.data.note.velocity = 0x00;
+        //       ev2.data.note.note = FORCE_BT_QLINK1_TOUCH + lastKnob ;
+        //       SendMidiEvent(&ev2 );
+        //     }
 
-            // Simulate a "touch" knob
-            ev2.type = SND_SEQ_EVENT_NOTEON;
-            ev2.data.note.velocity = 0x7F;
-            ev2.data.note.note = FORCE_BT_QLINK1_TOUCH + k ;
-            SendMidiEvent(&ev2 );
-          }
+        //     // Simulate a "touch" knob
+        //     ev2.type = SND_SEQ_EVENT_NOTEON;
+        //     ev2.data.note.velocity = 0x7F;
+        //     ev2.data.note.note = FORCE_BT_QLINK1_TOUCH + k ;
+        //     SendMidiEvent(&ev2 );
+        //   }
 
-          lastKnob = k;
+        //  lastKnob = k;
         }
-      }
       break;
-    }
 
     case SND_SEQ_EVENT_NOTEON:
     case SND_SEQ_EVENT_NOTEOFF:
@@ -417,27 +448,29 @@ static bool ControllerEventReceived(snd_seq_event_t *ev) {
 
           if       ( ev->data.note.note == CTRL_BT_SHIFT) {
             CtrlShiftMode = ( ev->data.note.velocity == 0x7F );
+            ColumnsPadMode = CtrlShiftMode;
+            ControllerRefreshColumnsPads(ColumnsPadMode);
 
             return false;
           }
 
           // UP / COPY 
-          else if  ( ev->data.note.note == CTRL_BT_TRACK_4  ) {
+          else if  ( ev->data.note.note == CTRL_BT_TRACK_5  ) {
             mapVal = CtrlShiftMode ? FORCE_BT_UP : FORCE_BT_COPY  ;
           }
 
           // DOWN / DELETE
-          else if  ( ev->data.note.note == CTRL_BT_TRACK_5  ) {
+          else if  ( ev->data.note.note == CTRL_BT_TRACK_6  ) {
             mapVal = CtrlShiftMode ? FORCE_BT_DOWN :FORCE_BT_DELETE ;
           }
-          // Shit = LEFT / EDIT - Column mode : Assign A
-          else if  ( ev->data.note.note == CTRL_BT_TRACK_6  ) {
-            mapVal = ColumnsPadMode ? FORCE_BT_ASSIGN_A : ( CtrlShiftMode ? FORCE_BT_LEFT : FORCE_BT_EDIT ) ;
+          // LEFT / EDIT 
+          else if  ( ev->data.note.note == CTRL_BT_TRACK_7  ) {
+            mapVal = CtrlShiftMode ? FORCE_BT_LEFT : FORCE_BT_EDIT  ;
           }
 
-          // Right / Step Seq - Column mode : Assign B
-          else if  ( ev->data.note.note == CTRL_BT_TRACK_7  ) {
-            mapVal = ColumnsPadMode ? FORCE_BT_ASSIGN_B : ( mapVal = CtrlShiftMode ? FORCE_BT_RIGHT :FORCE_BT_STEP_SEQ );
+          // Right / Select  
+          else if  ( ev->data.note.note == CTRL_BT_TRACK_8  ) {
+            mapVal = CtrlShiftMode ? FORCE_BT_RIGHT :FORCE_BT_SELECT ;
           }
 
           // Volume / Mixer / Master
@@ -445,33 +478,20 @@ static bool ControllerEventReceived(snd_seq_event_t *ev) {
             mapVal = CtrlShiftMode ? FORCE_BT_MASTER : FORCE_BT_MIXER ;
           }
 
-          // Pan / Launch
+          // Pan / Assign A / Assign B
           else if  ( ev->data.note.note == CTRL_BT_TRACK_2  ) {
-             mapVal = FORCE_BT_LAUNCH ;
+             mapVal = CtrlShiftMode ? FORCE_BT_ASSIGN_B : FORCE_BT_ASSIGN_A ;
           }
 
-          // Send / Note
+          // Send = Launch
           else if  ( ev->data.note.note == CTRL_BT_TRACK_3  ) {
-             mapVal = FORCE_BT_NOTE ;
+             
+             mapVal = FORCE_BT_LAUNCH ;
           }
 
           //  Device / Menu / Matrix
           else if  ( ev->data.note.note == CTRL_BT_TRACK_4  ) {
              mapVal = CtrlShiftMode ? FORCE_BT_MENU:FORCE_BT_MATRIX ;
-          }
-
-          // Mute mode key
-          // "Stop all clips" is used to manage solo modes, and quadran
-          // Shift => Button STOP
-
-          else if  ( ev->data.note.note == CTRL_BT_STOP_ALL_CLIPS  ) {
-//            if ( CtrlShiftMode) mapVal = FORCE_BT_STOP ;
-//            else {
-              ColumnsPadMode = ( ev->data.note.velocity == 0x7F ) || ColumnsPadModeLocked ;
-              //tklog_debug("Column mode => %s \n", ColumnsPadMode ? "True":"False");
-              ControllerRefreshColumnsPads(ColumnsPadMode);
-              return false;
-//            }
           }
 
           // Launch 1 / Clip Stop
@@ -583,13 +603,6 @@ static bool ControllerEventReceived(snd_seq_event_t *ev) {
               // Take car of current quadran
               ev->data.note.note = ControllerGetForcePadNote(ev->data.note.note) + CtrlPadQuadran;
 
-              // If Shift Mode, simulate Select key
-              if ( CtrlShiftMode ) {
-                SendDeviceKeyEvent(FORCE_BT_SELECT,true);
-                SendMidiEvent(ev);
-                SendDeviceKeyEvent(FORCE_BT_SELECT,false);
-                return false;
-              }
             }
         }
       }
