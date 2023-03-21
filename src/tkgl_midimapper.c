@@ -654,6 +654,7 @@ void SendDeviceKeyPress(uint8_t key) {
 ///////////////////////////////////////////////////////////////////////////////
 void SendDeviceKeyEvent(uint8_t key, uint8_t value) {
   snd_seq_event_t ev2;
+  snd_seq_ev_clear	(&ev2);
   SetMidiEventDestination(&ev2,TO_MPC_PRIVATE );
   ev2.type = SND_SEQ_EVENT_NOTEON;
   ev2.data.note.channel = 0;

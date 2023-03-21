@@ -70,20 +70,20 @@ IMAFORCE PLUGIN -- Force Emulation on MPC
 
 // IAMFORCE MACRO CC# on channel 16
 // 0x89 is undefined in midi list standard CC
-#define IAMFORCE_MACRO_CC 89  
 #define IAMFORCE_MACRO_MIDICH 0x0F
 
-enum IamForceMacroCCValues { 
-IAMFORCE_MACRO_PLAY, 
-IAMFORCE_MACRO_REC, 
-IAMFORCE_MACRO_STOP, 
-IAMFORCE_MACRO_TAP, 
-IAMFORCE_MACRO_NEXT_SEQ,
-IAMFORCE_MACRO_PREV_SEQ,
-IAMFORCE_MACRO_FIRST_SEQ,
-IAMFORCE_MACRO_LAST_SEQ,
-IAMFORCE_MACRO_ARP,
-IAMFORCE_MACRO_UNDO,
+enum IamForceMacroCCNumbers { 
+IAMFORCE_CC_MACRO_PLAY, 
+IAMFORCE_CC_MACRO_REC, 
+IAMFORCE_CC_MACRO_STOP, 
+IAMFORCE_CC_MACRO_TAP, 
+IAMFORCE_CC_MACRO_NEXT_SEQ,
+IAMFORCE_CC_MACRO_PREV_SEQ,
+IAMFORCE_CC_MACRO_FIRST_SEQ,
+IAMFORCE_CC_MACRO_LAST_SEQ,
+IAMFORCE_CC_MACRO_ARP,
+IAMFORCE_CC_MACRO_UNDO,
+IAMFORCE_CC_MACRO_LAST_ENTRY
 };
 
 // Force columns solo modes
@@ -163,9 +163,22 @@ static void IamForceMacro_NextSeq(int step);
 // Midi controller specific ----------------------------------------------------
 // Include here your own controller implementation
 
-//#include "Iamforce-NONE.h"
-//#include "Iamforce-LPMK3.h"
-#include "Iamforce-APCKEY25MK2.h"
+// To compile define one of the following preprocesseur variable :
+// NONE is the default.
+
+#if defined _APCKEY25MK2_
+   #warning IamForce driver id : APCKEY25MK2
+   #include "Iamforce-APCKEY25MK2.h"
+#elif defined _LPMK3_
+   #warning IamForce driver id : LPMK3
+   #include "Iamforce-LPMK3.h"
+#elif defined _APCMINIMK2_
+   #warning IamForce driver id : APCMINIMK2
+   #include "Iamforce-APCMINIMK2.h"
+#else 
+   #warning IamForce driver id : NONE
+   #include "Iamforce-NONE.h"
+#endif
 
 // Midi controller specific END ------------------------------------------------
 
@@ -360,6 +373,7 @@ static void MPCSetMapButton(snd_seq_event_t *ev) {
 
       // Set LED
       snd_seq_event_t ev2;
+      snd_seq_ev_clear	(&ev2)	;
       ev2.type = SND_SEQ_EVENT_CONTROLLER;
       ev2.data.control.channel = 0 ;
       ev2.data.control.param = MPC_BT_QLINK_SELECT_LED_1 ;
@@ -617,52 +631,56 @@ bool MidiMapper( uint8_t sender, snd_seq_event_t *ev, uint8_t *buffer, size_t si
         if ( ev->type == SND_SEQ_EVENT_CONTROLLER ) {
 
           // Is it one of our IAMFORCE macros on midi channel 16 ?
-          if (  ev->data.control.channel = IAMFORCE_MACRO_MIDICH && ev->data.control.param == IAMFORCE_MACRO_CC ) {
+          if (  ev->data.control.channel = IAMFORCE_MACRO_MIDICH && ev->data.control.param < IAMFORCE_CC_MACRO_LAST_ENTRY ) {
                   tklog_debug("Macro received %02X %02X\n",ev->data.control.param,ev->data.control.value);
 
-                  switch (ev->data.control.value)
-                  {
-                  // CC 0x71 on channel 16
+                  // CC 00 is the first CC on channel 16
+                  // If value !=0, that will trig a Force button
+                  if (ev->data.control.value > 0 )  {
 
-                  case IAMFORCE_MACRO_PLAY: 
-                    SendDeviceKeyPress(FORCE_BT_PLAY);                    
-                    break;
+                    switch (ev->data.control.param  )
+                    {
+                      case IAMFORCE_CC_MACRO_PLAY:
+                        SendDeviceKeyPress(FORCE_BT_PLAY);                    
+                        break;
 
-                  case IAMFORCE_MACRO_STOP:
-                    SendDeviceKeyPress(FORCE_BT_STOP);
-                    break;
+                      case IAMFORCE_CC_MACRO_STOP:
+                        SendDeviceKeyPress(FORCE_BT_STOP);
+                        break;
 
-                  case IAMFORCE_MACRO_REC:
-                    SendDeviceKeyPress(FORCE_BT_REC);
-                    break;
+                      case IAMFORCE_CC_MACRO_REC:
+                        SendDeviceKeyPress(FORCE_BT_REC);
+                        break;
 
-                  case IAMFORCE_MACRO_TAP:
-                    SendDeviceKeyPress(FORCE_BT_TAP_TEMPO);
-                    break;
+                      case IAMFORCE_CC_MACRO_TAP:
+                        SendDeviceKeyPress(FORCE_BT_TAP_TEMPO);
+                        break;
 
-                  case IAMFORCE_MACRO_PREV_SEQ:
-                    IamForceMacro_NextSeq(-1);
-                    break;
+                      case IAMFORCE_CC_MACRO_PREV_SEQ:
+                        IamForceMacro_NextSeq(-1);
+                        break;
 
-                  case IAMFORCE_MACRO_NEXT_SEQ:                
-                    IamForceMacro_NextSeq(1);
-                    break;
+                      case IAMFORCE_CC_MACRO_NEXT_SEQ:                
+                        IamForceMacro_NextSeq(1);
+                        break;
 
-                 case IAMFORCE_MACRO_FIRST_SEQ:
-                    IamForceMacro_NextSeq(-8);
-                    break;
+                      case IAMFORCE_CC_MACRO_FIRST_SEQ:
+                          IamForceMacro_NextSeq(-8);
+                          break;
 
-                 case IAMFORCE_MACRO_LAST_SEQ:
-                    IamForceMacro_NextSeq(8);
-                    break;
+                      case IAMFORCE_CC_MACRO_LAST_SEQ:
+                          IamForceMacro_NextSeq(8);
+                          break;
 
-                  case IAMFORCE_MACRO_ARP:
-                    SendDeviceKeyPress(FORCE_BT_ARP);
-                    break;
+                      case IAMFORCE_CC_MACRO_ARP:
+                        SendDeviceKeyPress(FORCE_BT_ARP);
+                        break;
 
-                  case IAMFORCE_MACRO_UNDO:
-                    SendDeviceKeyPress(FORCE_BT_UNDO);
-                    break;
+                      case IAMFORCE_CC_MACRO_UNDO:
+                        SendDeviceKeyPress(FORCE_BT_UNDO);
+                        break;
+
+                    }
 
                   }
                   
