@@ -169,12 +169,15 @@ static void IamForceMacro_NextSeq(int step);
 #if defined _APCKEY25MK2_
    #warning IamForce driver id : APCKEY25MK2
    #include "Iamforce-APCKEY25MK2.h"
-#elif defined _LPMK3_
-   #warning IamForce driver id : LPMK3
-   #include "Iamforce-LPMK3.h"
 #elif defined _APCMINIMK2_
    #warning IamForce driver id : APCMINIMK2
    #include "Iamforce-APCMINIMK2.h"
+#elif defined _LPMK3_
+   #warning IamForce driver id : LPMK3
+   #include "Iamforce-LPMK3.h"
+#elif defined _LPX_
+   #warning IamForce driver id : LPX
+   #include "Iamforce-LPX.h"
 #else 
    #warning IamForce driver id : NONE
    #include "Iamforce-NONE.h"
