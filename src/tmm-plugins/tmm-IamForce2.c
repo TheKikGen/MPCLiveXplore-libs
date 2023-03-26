@@ -163,7 +163,7 @@ static void IamForceMacro_NextSeq(int step);
 // Midi controller specific ----------------------------------------------------
 // Include here your own controller implementation
 
-// To compile define one of the following preprocesseur variable :
+// To compile define one of the following preprocesseur variables :
 // NONE is the default.
 
 #if defined _APCKEY25MK2_
@@ -178,6 +178,9 @@ static void IamForceMacro_NextSeq(int step);
 #elif defined _LPX_
    #warning IamForce driver id : LPX
    #include "Iamforce-LPX.h"
+#elif defined _KIKPADMK3_
+   #warning IamForce driver id : KIKPADMK3
+   #include "Iamforce-KIKPADMK3.h"
 #else 
    #warning IamForce driver id : NONE
    #include "Iamforce-NONE.h"
@@ -362,14 +365,18 @@ static void MPCSetMapButton(snd_seq_event_t *ev) {
     else if (  ev->data.note.note == MPC_BT_PLAY )         mapVal = FORCE_BT_PLAY;
     else if (  ev->data.note.note == MPC_BT_REC )          mapVal = FORCE_BT_REC;
     else if (  ev->data.note.note == MPC_BT_MAIN )         mapVal = FORCE_BT_MATRIX;
+    
     else if (  ev->data.note.note == MPC_BT_NOTE_REPEAT )  mapVal = FORCE_BT_ARP;
-    else if (  ev->data.note.note == MPC_BT_TAP_TEMPO )    mapVal = FORCE_BT_TAP_TEMPO;
-    else if (  ev->data.note.note == MPC_BT_FULL_LEVEL )   mapVal = FORCE_BT_SELECT;
+    else if (  ev->data.note.note == MPC_BT_FULL_LEVEL )   mapVal = FORCE_BT_MIXER;
     else if (  ev->data.note.note == MPC_BT_16_LEVEL )     mapVal = FORCE_BT_EDIT;
+    else if (  ev->data.note.note == MPC_BT_ERASE )        mapVal = FORCE_BT_DELETE;
+    
+    else if (  ev->data.note.note == MPC_BT_TAP_TEMPO )    mapVal = FORCE_BT_TAP_TEMPO;
+    
     else if (  ev->data.note.note == MPC_BT_UNDO )         mapVal = FORCE_BT_UNDO;
-    else if (  ev->data.note.note == MPC_BT_OVERDUB )      mapVal = FORCE_BT_SAVE;
-    else if (  ev->data.note.note == MPC_BT_PLUS )         mapVal = FORCE_BT_PLUS;
-    else if (  ev->data.note.note == MPC_BT_MINUS )        mapVal = FORCE_BT_MINUS;
+    else if (  ev->data.note.note == MPC_BT_OVERDUB )      mapVal = FORCE_BT_SAVE;  
+    else if (  ev->data.note.note == MPC_BT_PLUS )         mapVal = FORCE_BT_EDIT;
+    else if (  ev->data.note.note == MPC_BT_MINUS )        mapVal = FORCE_BT_DELETE;
     else if (  ev->data.note.note == MPC_BT_QLINK_SELECT ) {
 
       if ( KnobTouch && ev->data.note.velocity == 0x7F ) KnobShiftMode = !KnobShiftMode ;
