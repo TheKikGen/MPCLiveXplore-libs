@@ -1,4 +1,4 @@
-/*
+  /*
 __ __| |           |  /_) |     ___|             |           |
   |   __ \   _ \  ' /  | |  / |      _ \ __ \   |      _` | __ \   __|
   |   | | |  __/  . \  |   <  |   |  __/ |   |  |     (   | |   |\__ \
@@ -318,11 +318,6 @@ static void ControllerSetMapButtonLed(snd_seq_event_t *ev) {
     else if ( ev->data.control.param == FORCE_BT_LAUNCH )     mapVal = CTRL_BT_SESSION ;
     else if ( ev->data.control.param == FORCE_BT_MASTER )     mapVal = CTRL_BT_SESSION ;
 
-
-    else if ( ev->data.control.param == FORCE_BT_TAP_TEMPO )  {
-          mapVal = CTRL_BT_LOGO;
-          mapVal2 = ev->data.control.value == 3 ?  CTRL_COLOR_RED_LT:00 ;
-    }
     else if ( ev->data.control.param == FORCE_BT_LAUNCH_1 )   mapVal = CTRL_BT_LAUNCH_1  ;
     else if ( ev->data.control.param == FORCE_BT_LAUNCH_2 )   mapVal = CTRL_BT_LAUNCH_2  ;
     else if ( ev->data.control.param == FORCE_BT_LAUNCH_3 )   mapVal = CTRL_BT_LAUNCH_3  ;
@@ -561,7 +556,16 @@ static bool ControllerEventReceived(snd_seq_event_t *ev) {
               ev->data.note.velocity == ( ev->data.note.velocity > 0 ? 0x7F:00);
             }
         }
-        else ev->data.note.channel = 9; // Note Force pad
+        else  {
+          ev->data.note.channel = 9; // Note Force pad
+          // If Shift Mode, simulate Select key
+          if ( CtrlShiftMode ) {
+              SendDeviceKeyEvent(FORCE_BT_SELECT,0x7F);
+              SendMidiEvent(ev);
+              SendDeviceKeyEvent(FORCE_BT_SELECT,0);
+              return false;
+            }
+        }
       }
   }
 

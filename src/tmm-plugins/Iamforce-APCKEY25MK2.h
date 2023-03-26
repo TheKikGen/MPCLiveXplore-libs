@@ -499,6 +499,20 @@ static bool ControllerEventReceived(snd_seq_event_t *ev) {
             return false;
           }
 
+         // Mute mode key
+          // "Stop all clips" is used to manage solo modes, and quadran
+          // Shift => Button STOP
+
+          else if  ( ev->data.note.note == CTRL_BT_STOP_ALL_CLIPS  ) {
+            if ( CtrlShiftMode) mapVal = FORCE_BT_STOP ;
+            else {
+              ColumnsPadMode = ( ev->data.note.velocity == 0x7F ) || ColumnsPadModeLocked ;
+              //tklog_debug("Column mode => %s \n", ColumnsPadMode ? "True":"False");
+              ControllerRefreshColumnsPads(ColumnsPadMode);
+              return false;
+            }
+          }
+          
           // UP / COPY / QUADRAN
           else if  ( ev->data.note.note == CTRL_BT_TRACK_1  ) {
             // Quadran shift on / off
@@ -527,7 +541,7 @@ static bool ControllerEventReceived(snd_seq_event_t *ev) {
 
           // Right / Step Seq - Column mode : Assign B
           else if  ( ev->data.note.note == CTRL_BT_TRACK_4  ) {
-            mapVal = ColumnsPadMode ? FORCE_BT_ASSIGN_B : ( mapVal = CtrlShiftMode ? FORCE_BT_RIGHT :FORCE_BT_STEP_SEQ );
+            mapVal = ColumnsPadMode ? FORCE_BT_ASSIGN_B : ( mapVal == CtrlShiftMode ? FORCE_BT_RIGHT :FORCE_BT_STEP_SEQ );
           }
 
           // Volume / Mixer / Master
@@ -560,19 +574,7 @@ static bool ControllerEventReceived(snd_seq_event_t *ev) {
             mapVal = FORCE_BT_PLAY ;
           }
 
-          // Mute mode key
-          // "Stop all clips" is used to manage solo modes, and quadran
-          // Shift => Button STOP
-
-          else if  ( ev->data.note.note == CTRL_BT_STOP_ALL_CLIPS  ) {
-            if ( CtrlShiftMode) mapVal = FORCE_BT_STOP ;
-            else {
-              ColumnsPadMode = ( ev->data.note.velocity == 0x7F ) || ColumnsPadModeLocked ;
-              //tklog_debug("Column mode => %s \n", ColumnsPadMode ? "True":"False");
-              ControllerRefreshColumnsPads(ColumnsPadMode);
-              return false;
-            }
-          }
+ 
 
           // Launch 5 (Select) / STOP ALL In COLUMN MODE / Shift = Knobs select
           else if  ( ev->data.note.note == CTRL_BT_LAUNCH_5  ) {
@@ -671,9 +673,9 @@ static bool ControllerEventReceived(snd_seq_event_t *ev) {
 
               // If Shift Mode, simulate Select key
               if ( CtrlShiftMode ) {
-                SendDeviceKeyEvent(FORCE_BT_SELECT,true);
+                SendDeviceKeyEvent(FORCE_BT_SELECT,0x7F);
                 SendMidiEvent(ev);
-                SendDeviceKeyEvent(FORCE_BT_SELECT,false);
+                SendDeviceKeyEvent(FORCE_BT_SELECT,0);
                 return false;
               }
             }
