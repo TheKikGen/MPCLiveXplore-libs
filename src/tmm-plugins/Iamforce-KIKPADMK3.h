@@ -145,6 +145,15 @@ show columns pads permanenently.
 #define CTRL_PAD_MAX_LINE 8
 #define CTRL_PAD_MAX_COL  8
 
+// Knobs are relative
+#define CTRL_KNOB_1 0x00
+#define CTRL_KNOB_2 0x01
+#define CTRL_KNOB_3 0x02
+#define CTRL_KNOB_4 0x03
+#define CTRL_KNOB_5 0x04
+#define CTRL_KNOB_6 0x05
+#define CTRL_KNOB_7 0x06
+#define CTRL_KNOB_8 0x07
 
 // Standard colors
 #define CTRL_COLOR_BLACK 0
@@ -212,11 +221,18 @@ static void ControllerSetPadColorRGB(uint8_t padCt, uint8_t r, uint8_t g, uint8_
   // 0xF0, 0x00, 0x20, 0x29, 0x02, 0x0D, 0x03, 0x03 (Led Index) ( r) (g)  (b)
   //xxrgbRGB
 
+uint8_t p =2;
+
+  //if ( r > 43*2  && r < 110  ) r = 43*2;
+  //if ( g > 0 && g < 127 - 43 ) g += 43;
+  //if ( b > 0 && b < 127 - 43 ) b += 43;
+
   SX_LPMK3_LED_RGB_COLOR[8]  = padCt;
   SX_LPMK3_LED_RGB_COLOR[9]  = r ;
   SX_LPMK3_LED_RGB_COLOR[10] = g ;
   SX_LPMK3_LED_RGB_COLOR[11] = b ;
 
+  
   SeqSendRawMidi( TO_CTRL_EXT,SX_LPMK3_LED_RGB_COLOR,sizeof(SX_LPMK3_LED_RGB_COLOR) );
 
 }
@@ -268,44 +284,32 @@ static int ControllerInitialize() {
 
   tklog_info("IamForce : %s implementation, version %s.\n",IAMFORCE_DRIVER_NAME,IAMFORCE_DRIVER_VERSION);
 
-  //SeqSendRawMidi( TO_CTRL_EXT,  SX_LPMK3_STDL_MODE, sizeof(SX_LPMK3_STDL_MODE) );
-  //SeqSendRawMidi( TO_CTRL_EXT,  SX_LPMK3_DAW_CLEAR, sizeof(SX_LPMK3_DAW_CLEAR) );
-  //SeqSendRawMidi( TO_CTRL_EXT,  SX_LPMK3_PGM_MODE, sizeof(SX_LPMK3_PGM_MODE) );
+  ControllerSetPadMatrixRGB(0,0,0 ) ;
 
- ControllerSetPadMatrixRGB(0,0,0 ) ;
+  snd_seq_event_t ev;
+  snd_seq_ev_clear	(&ev);
+  SetMidiEventDestination(&ev, TO_CTRL_EXT );
+  ev.type=SND_SEQ_EVENT_NOTEON;
+  ev.data.note.channel = 0;
 
-//   // Clear the pad matrix
-//   snd_seq_event_t ev;
-//   snd_seq_ev_clear	(&ev);
+  for ( int i = 0 ; i < 64 ; i++ ) {
+    ev.data.note.note = ControllerGetPadIndex(i) ;
+    ev.data.note.velocity = i;
+    SendMidiEvent(&ev );
+  } 
 
 
-//   SetMidiEventDestination(&ev, TO_CTRL_EXT );
-//   ev.type=SND_SEQ_EVENT_NOTEON;
-//   ev.data.note.channel = 0;
+  // ControllerSetPadMatrixRGB(0,0,0 ) ;
+  // uint8_t p = 43;
+
+  // for ( int i = p ; i < p+64 ; i++ ) {
+  //     ControllerSetPadColorRGB(ControllerGetPadIndex(i - p), i,0,0);
+  //     //tklog_debug("Moyenne %d = %f \n",i,( i+i+i)/3.0);
+  // } 
+//exit(0);
 
 
-//   uint8_t c = 0;
-//   uint8_t p = 0;
 
-//   for ( int i = 0 ; i < 64 ; i++ ) {
-
-//     p = ControllerGetPadIndex(i);
-
-//     ev.data.note.note = p ;
-//     ev.data.note.velocity = i;
-//     SendMidiEvent(&ev );
-//     // xxrgbRGB
-//     uint8_t r = ( ( i >> 5 ) & 1 ) + ( ( i >> 1 ) & 2 )   ;
-//     uint8_t g = ( ( i >> 4 ) & 1 ) + (  i  & 2 )   ;
-//     uint8_t b = ( ( i >> 3 ) & 1 ) + ( ( i << 1 ) & 2 )   ;
-
-//     tklog_debug("Pad %02x (%02x) : Color r g b %02X %02X %02X \n",p,i,r,g,b);
-
-//   } 
-
-// exit(0);
-  //ControllerSetPadMatrixRGB(0,0,0 ) ;
- 
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -442,12 +446,60 @@ static void ControllerRefreshColumnsPads(bool show) {
 ///////////////////////////////////////////////////////////////////////////////
 static bool ControllerEventReceived(snd_seq_event_t *ev) {
 
-tklog_debug("Controller event received\n");
+//tklog_debug("Controller event received\n");
   switch (ev->type) {
     case SND_SEQ_EVENT_SYSEX:
       break;
 
     case SND_SEQ_EVENT_CONTROLLER:
+
+      // Knobs 1 - 8
+      if ( ev->data.control.channel == 4 ) {
+
+        if ( ev->data.control.param >= CTRL_KNOB_1 && ev->data.control.param  <= CTRL_KNOB_8 ) {
+
+          static uint8_t lastKnob = 0xFF;
+
+          SetMidiEventDestination(ev,TO_MPC_PRIVATE );
+          ev->data.control.channel = 0 ;
+
+          uint8_t k = ev->data.control.param - CTRL_KNOB_1 ;
+          //tklog_debug("Knob no %d\n",k);
+
+          // Remap controller
+          ev->data.control.param = FORCE_KN_QLINK_1 + k;
+          //tklog_debug("Knob remap %02x\n",ev->data.control.param);
+
+          if ( lastKnob != k  ) {
+            snd_seq_event_t ev2 = *ev;
+            ev2.data.note.channel = 0;
+            SetMidiEventDestination(&ev2,TO_MPC_PRIVATE );
+
+            if ( lastKnob != 0xFF) {
+              // Simulate an "untouch", but not the first time
+              ev2.type = SND_SEQ_EVENT_NOTEOFF;
+              ev2.data.note.velocity = 0x00;
+              ev2.data.note.note = FORCE_BT_QLINK1_TOUCH + lastKnob ;
+              SendMidiEvent(&ev2 );
+              //tklog_debug("Knob untouch %02x\n",ev2.data.note.note);
+            }
+
+            // Simulate a "touch" knob
+            ev2.type = SND_SEQ_EVENT_NOTEON;
+            ev2.data.note.velocity = 0x7F;
+            ev2.data.note.note = FORCE_BT_QLINK1_TOUCH + k ;
+            SendMidiEvent(&ev2 );
+            //tklog_debug("Knob touch %02x\n",ev2.data.note.note);
+          }
+
+          lastKnob = k;
+        }
+ 
+        break;
+
+      }
+
+      else
       // Buttons around Kikpad mini pads
       if ( ev->data.control.channel == 0 ) {
         int mapVal = -1;
