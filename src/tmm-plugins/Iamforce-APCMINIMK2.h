@@ -34,7 +34,7 @@ AKAI APC MINI MK2  FOR IAMFORCE
   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
 */
 
-#define IAMFORCE_DRIVER_VERSION "1.0"
+#define IAMFORCE_DRIVER_VERSION "1.1 BETA"
 #define IAMFORCE_DRIVER_ID "APCMINIMK2"
 #define IAMFORCE_DRIVER_NAME "Akai APC Mini mk2"
 #define IAMFORCE_ALSASEQ_DEFAULT_CLIENT_NAME "APC mini mk2"
@@ -310,17 +310,18 @@ static void ControllerSetMapButtonLed(snd_seq_event_t *ev) {
       else return;
     }
 
+
     else if ( ev->data.control.param == FORCE_BT_MIXER )  {
       mapVal = CTRL_BT_TRACK_1 ;
       mapVal2 =  ev->data.control.value == 3 ? 0x7F:00;
     }
 
-    else if ( ev->data.control.param == FORCE_BT_LAUNCH )  {
+    else if ( ev->data.control.param == FORCE_BT_CLIP )  {
       mapVal = CTRL_BT_TRACK_2 ;
       mapVal2 =  ev->data.control.value == 3 ? 0x7F:00;
     }
 
-    else if ( ev->data.control.param == FORCE_BT_NOTE )  {
+    else if ( ev->data.control.param == FORCE_BT_LAUNCH )  {
       mapVal = CTRL_BT_TRACK_3 ;
       mapVal2 =  ev->data.control.value == 3 ? 0x7F:00;
     }
@@ -330,9 +331,14 @@ static void ControllerSetMapButtonLed(snd_seq_event_t *ev) {
       mapVal2 =  ev->data.control.value == 3 ? 0x7F:00;
     }
 
+    else if ( ev->data.control.param == FORCE_BT_MENU )  {
+      mapVal = CTRL_BT_TRACK_4 ;
+      mapVal2 =  ev->data.control.value == 3 ? 0x7F:00;
+    }
+
     else if ( ev->data.control.param == FORCE_BT_COPY )   {
       // LED : 0 = off, 1 low bright, 3 high bright
-      mapVal  = CTRL_BT_TRACK_5;
+      mapVal  = CTRL_BT_TRACK_5; 
       mapVal2 =  ev->data.control.value == 3 ? 0x7F:00 ;
     }   
 
@@ -346,13 +352,7 @@ static void ControllerSetMapButtonLed(snd_seq_event_t *ev) {
       mapVal2 =  ev->data.control.value == 3 ? 0x7F:00;
     }
     
-    else if ( ev->data.control.param == FORCE_BT_STEP_SEQ )  {
-      mapVal = CTRL_BT_TRACK_8 ;
-      mapVal2 =  ev->data.control.value == 3 ? 0x7F:00;
-    }
-
-
-    else if ( ev->data.control.param == FORCE_BT_MUTE )   {
+      else if ( ev->data.control.param == FORCE_BT_MUTE )   {
       if ( ev->data.control.value == 3 ) {
         CurrentSoloMode = FORCE_SM_MUTE ; // Resynchronize
       }
@@ -523,9 +523,9 @@ static bool ControllerEventReceived(snd_seq_event_t *ev) {
             mapVal = CtrlShiftMode ? FORCE_BT_MASTER : FORCE_BT_MIXER ;
           }
 
-          // Pan / Assign A / Assign B
+          // Pan : CLIP
           else if  ( ev->data.note.note == CTRL_BT_TRACK_2  ) {
-             mapVal = CtrlShiftMode ? FORCE_BT_ASSIGN_B : FORCE_BT_ASSIGN_A ;
+             mapVal = FORCE_BT_CLIP ;
           }
 
           // Send = Launch

@@ -97,6 +97,10 @@ TkRouter_t TkRouter = {
     .seq = NULL,
 };
 
+// Sysex patterns.
+const uint8_t AkaiSysex[]                  = {AKAI_SYSEX_HEADER};
+const uint8_t IdentityReplySysexHeader[]   = {AKAI_SYSEX_IDENTITY_REPLY_HEADER};
+
 // Working midi buffer
 static uint8_t MidiWkBuffer[MIDI_DECODER_SIZE];
 
@@ -148,7 +152,7 @@ static snd_rawmidi_t *rawvirt_outpriv = NULL ;
 snd_rawmidi_t *raw_outpub  = NULL ;
 
 // Alsa API hooks declaration
-static typeof(&snd_rawmidi_open) orig_snd_rawmidi_open;
+typeof(&snd_rawmidi_open) orig_snd_rawmidi_open;
 static typeof(&snd_rawmidi_close) orig_snd_rawmidi_close;
 static typeof(&snd_rawmidi_read) orig_snd_rawmidi_read;
 typeof(&snd_rawmidi_write) orig_snd_rawmidi_write;
@@ -616,7 +620,6 @@ int SetMidiEventDestination(snd_seq_event_t *ev, uint8_t destId ) {
   return snd_seq_ev_set_source(ev, GetSeqPortFromDestinationId(destId) ) ;
 }
 
-
 ///////////////////////////////////////////////////////////////////////////////
 // MIDI SEND SEQ EVENT
 ///////////////////////////////////////////////////////////////////////////////
@@ -642,7 +645,6 @@ int SendMidiEvent(snd_seq_event_t *ev ) {
 ///////////////////////////////////////////////////////////////////////////////
 // Simulate a press/release key to be sent to MPC/force device
 ///////////////////////////////////////////////////////////////////////////////
-
 void SendDeviceKeyPress(uint8_t key) {
 
   SendDeviceKeyEvent(key,0x7F);
@@ -695,6 +697,60 @@ int GetSeqPortFromDestinationId(uint8_t destId ) {
   }
 
   return -1;
+
+}
+
+//////////////////////////////////////////////////////////////////////////////
+// Set a Force/MPC pad color 
+///////////////////////////////////////////////////////////////////////////////
+// 2 implementations : call with a 32 bits color int value or with r,g,b values
+void DeviceSetPadColor(const uint8_t mpcId, const uint8_t padNumber, const uint8_t r,const uint8_t g,const uint8_t b ) {
+
+  uint8_t sysexBuff[128];
+  int p = 0;
+
+  // F0 47 7F [3B] 65 00 04 [Pad #] [R] [G] [B] F7
+
+  memcpy(sysexBuff, AkaiSysex,sizeof(AkaiSysex));
+  p += sizeof(AkaiSysex) ;
+
+  // Add the current product id
+  sysexBuff[p++] = DeviceInfoBloc[mpcId].sysexId ;
+
+  // Add the fuunction Set Color
+
+  sysexBuff[p++] = AKAI_DEVICE_SX_SET_PAD_RGB ;
+
+  // Add the Len of msg
+  sysexBuff[p++] = 0;
+  sysexBuff[p++] = 4;
+
+  // Add the pad color fn and pad number and color
+  sysexBuff[p++] = padNumber ;
+
+  // #define COLOR_CORAL      00FF0077
+
+  sysexBuff[p++] = r ;
+  sysexBuff[p++] = g ;
+  sysexBuff[p++] = b ;
+
+  sysexBuff[p++]  = 0xF7; // End of SYSEX
+
+  // Send the sysex to the MPC controller
+  orig_snd_rawmidi_write(raw_outpub,sysexBuff,p);
+
+}
+
+void DeviceSetPadColorRGB(const uint8_t mpcId, const uint8_t padNumber, const uint32_t rgbColorValue) {
+
+  // Colors R G B max value is 7f in SYSEX. So the bit 8 is always set to 0.
+  RGBcolor_t col = { .v = rgbColorValue};
+
+  uint8_t r = col.c.r ;
+  uint8_t g = col.c.g ;
+  uint8_t b = col.c.b;
+
+  DeviceSetPadColor(mpcId, padNumber, r, g , b );
 
 }
 
@@ -851,11 +907,9 @@ static void makeLdHooks() {
 
 }
 
-
 ///////////////////////////////////////////////////////////////////////////////
 // Connect external controller port to TkRouter seq
 ///////////////////////////////////////////////////////////////////////////////
-
 static void CtrlExtSeqConnect()
 {
   snd_seq_disconnect_from	(	TkRouter.seq, TkRouter.portCtrl, TkRouter.Ctrl.cli, TkRouter.Ctrl.port);
@@ -930,6 +984,14 @@ static void tkgl_init()
 	sprintf(mpc_midi_public_alsa_name,"hw:%d,0,%d",TkRouter.MpcHW.card,TkRouter.MpcHW.portPub);
 	tklog_info("MPC controller Private hardware port Alsa name is %s. Sequencer id is %d:%d.\n",mpc_midi_private_alsa_name,TkRouter.MpcHW.cli,TkRouter.MpcHW.portPriv);
 	tklog_info("MPC controller Public  hardware port Alsa name is %s. Sequencer id is %d:%d.\n",mpc_midi_public_alsa_name,TkRouter.MpcHW.cli,TkRouter.MpcHW.portPub);
+
+  // Open the raw midi public to make the handle available to sub routines
+  if ( orig_snd_rawmidi_open(NULL, &raw_outpub, mpc_midi_public_alsa_name, 3) < 0 )  {
+    tklog_fatal("Error : MPC public raw midi open failed ! (name was '%s')\n",mpc_midi_public_alsa_name);
+    exit(1);
+  }
+
+	tklog_info("MPC controller Public rawmidi port %s succefully opened.\n",mpc_midi_public_alsa_name);
 
 	// Create 2 virtuals rawmidi ports : Private I/O. Public O is a true raw midi port.
   // The port is always 0. This is the standard behaviour of Alsa virtual rawmidi.
@@ -1074,7 +1136,6 @@ int __libc_start_main(
     int (*main)(int, char **, char **),
     int argc,
     char **argv,
-
     int (*init)(int, char **, char **),
     void (*fini)(void),
     void (*rtld_fini)(void),
@@ -1173,6 +1234,7 @@ int __libc_start_main(
     // ... and call main again
     return r ;
 }
+
 ///////////////////////////////////////////////////////////////////////////////
 // close
 ///////////////////////////////////////////////////////////////////////////////
@@ -1206,7 +1268,6 @@ int fake_open(const char * name, char *content, size_t contentSize) {
 // open64
 ///////////////////////////////////////////////////////////////////////////////
 // Intercept all file opening to fake those we want to.
-
 int open64(const char *pathname, int flags,...) {
    // If O_CREAT is used to create a file, the file access mode must be given.
    // We do not fake the create function at all.
@@ -1317,12 +1378,10 @@ int snd_rawmidi_open(snd_rawmidi_t **inputp, snd_rawmidi_t **outputp, const char
 
 	else if ( strcmp(mpc_midi_public_alsa_name,name) == 0   ) {
 
-    // Save public rawmidi port handle
-    int r = orig_snd_rawmidi_open(inputp, outputp, name, mode);
-    tklog_info("%s (public) rawmidi capture successfull\n",name);
-    raw_outpub = *outputp;
-    return r;
-
+    // Assign our public rawmidi port handle
+    tklog_info("%s (public) rawmidi assignment successfull (mode %d) \n",name,mode);
+    *outputp = raw_outpub; 
+    return 0;
 	}
 
 	return orig_snd_rawmidi_open(inputp, outputp, name, mode);

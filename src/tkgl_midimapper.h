@@ -45,7 +45,7 @@ __ __| |           |  /_) |     ___|             |           |\n\
 
 // Sysex
 
-#define FORCE_SX_SET_PAD_RGB 0x65
+#define AKAI_DEVICE_SX_SET_PAD_RGB 0x65
 #define AKAI_SYSEX_HEADER 0xF0,0x47, 0x7F
 #define AKAI_SYSEX_IDENTITY_REPLY_HEADER 0xF0,0x7E,0x00,0x06,0x02,0x47
 
@@ -79,7 +79,6 @@ __ __| |           |  /_) |     ___|             |           |\n\
 
 // Colors R G B (nb . max r g b value is 7f. The bit 8 is always set )
 #define COLOR_BLACK      0x000000
-
 #define COLOR_FIRE       0x060101
 #define COLOR_TANGERINE  0x060201
 #define COLOR_APRICOT    0x7F5019
@@ -416,4 +415,5 @@ int GetSeqPortFromDestinationId(uint8_t destId );
 void SendDeviceKeyEvent(uint8_t key,uint8_t value);
 void SendDeviceKeyPress(uint8_t key);
 static int ControllerGetPadIndex(uint8_t padF) ;
-
+void DeviceSetPadColor(const uint8_t mpcId, const uint8_t padNumber, const uint8_t r,const uint8_t g,const uint8_t b ) ;
+void DeviceSetPadColorRGB(const uint8_t mpcId, const uint8_t padNumber, const uint32_t rgbColorValue);
