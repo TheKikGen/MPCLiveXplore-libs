@@ -24,7 +24,7 @@ This LD_PRELOAD library allows you to reconfigure the keys inaccessible in midi 
 
   --tkhelp                       : Show this help
   --tkclient=<client name regex> : Alsa sequencer client name regex used to find the midi controller client.
-                                 : Use aconnect -l to find your controller port.
+                                 : Use aconnect -l to find your controller port. 
   --tkport=<port>                : Alsa client sequencer port. Use aconnect -l to find your controller port.
   --tkplg=<plugin file name>     : Use plugin <file name> to transform & route midi events
   --tkdump                       : Dump original raw midi flow
