@@ -13,23 +13,23 @@ NB : You need SSH images uopdate to use these libraries.
 This LD_PRELOAD library allows you to reconfigure the keys inaccessible in midi learn like PLAY START, STOP on the MPC, or LAUNCH, MATRIX, MIXER on the Force for example. A plugin system allows to load the configuration designed for the midi device you are using. 
 
 ```
-[tkgl INFO    ]  ---------------------------------------------------------
-[tkgl INFO    ]  TKGL_MIDIMAPPER Version : BETA2
-[tkgl INFO    ]  (c) The KikGen Labs.
-[tkgl INFO    ]  https://github.com/TheKikGen/MPC-LiveXplore
-[tkgl INFO    ]  ---------------------------------------------------------
-[tkgl INFO    ]  MPC args : --tkplg=./tmm-plugins/tmm-IamForce-KIKPADMK3.so --tkhelp
-[tkgl INFO    ]
-[tkgl INFO    ]  --tkplg specified. File ./tmm-plugins/tmm-IamForce-KIKPADMK3.so will be used for midi mapping
-[tkgl INFO    ]
-[tkgl INFO    ]  --tkhelp                       : Show this help
-[tkgl INFO    ]  --tkclient=<client name regex> : Alsa sequencer client name regex used to find the midi controller client.
-[tkgl INFO    ]                                 : Use aconnect -l to find your controller port.
-[tkgl INFO    ]  --tkport=<port>                : Alsa client sequencer port. Use aconnect -l to find your controller port.
-[tkgl INFO    ]  --tkplg=<plugin file name>     : Use plugin <file name> to transform & route midi events
-[tkgl INFO    ]  --tkdump                       : Dump original raw midi flow
-[tkgl INFO    ]  --tkdumpP                      : Dump raw midi flow after transformation
-[tkgl INFO    ]
+---------------------------------------------------------
+  TKGL_MIDIMAPPER Version : BETA2
+  (c) The KikGen Labs.
+  https://github.com/TheKikGen/MPC-LiveXplore
+  ---------------------------------------------------------
+  MPC args : --tkplg=./tmm-plugins/tmm-IamForce-KIKPADMK3.so --tkhelp
+
+  --tkplg specified. File ./tmm-plugins/tmm-IamForce-KIKPADMK3.so will be used for midi mapping
+
+  --tkhelp                       : Show this help
+  --tkclient=<client name regex> : Alsa sequencer client name regex used to find the midi controller client.
+                                 : Use aconnect -l to find your controller port.
+  --tkport=<port>                : Alsa client sequencer port. Use aconnect -l to find your controller port.
+  --tkplg=<plugin file name>     : Use plugin <file name> to transform & route midi events
+  --tkdump                       : Dump original raw midi flow
+  --tkdumpP                      : Dump raw midi flow after transformation
+
 Example : # LD_PRELOAD=./tkgl_midimapper.so MPC --tkclient=".*MyControllerName.*" --tkport=1 --tkplg=./tmm-plugins/tmm-IamForce2LPMK3.so
 ```
 
