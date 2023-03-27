@@ -12,17 +12,42 @@ NB : You need SSH images uopdate to use these libraries.
 
 This LD_PRELOAD library allows you to reconfigure the keys inaccessible in midi learn like PLAY START, STOP on the MPC, or LAUNCH, MATRIX, MIXER on the Force for example. A plugin system allows to load the configuration designed for the midi device you are using. 
 
-The language used to create plugins is C, for performance reasons. So you need to have some programming knowledge, and install an ARM C compiler (this will be the subject of a later post on the wiki). For example, I created a plugin for my A800 master keyboard to launch scenes 1 to 8 from pads 1 to 8, and mapped the play, stop, rec keys to the PLAY, STOP ALL, REC keys of my Force. It's very nice to be able to control the workflow from my master keyboard.
+```
+---------------------------------------------------------
+  TKGL_MIDIMAPPER Version : BETA2
+  (c) The KikGen Labs.
+  https://github.com/TheKikGen/MPC-LiveXplore
+  ---------------------------------------------------------
+  MPC args : --tkplg=./tmm-plugins/tmm-IamForce-KIKPADMK3.so --tkhelp
 
-Currently, 2 plugins are available :
-- IAMFORCE2-LPMK3.so to emulate a Force on a MPC with a Novation Lauchpad mini Mk3
-- IAMFORCE2-APCKEY-25 to emaule a Force on a MPC with the Akai APC Key 25 mk2 mini keyboard/pads
+  --tkplg specified. File ./tmm-plugins/tmm-IamForce-KIKPADMK3.so will be used for midi mapping
+
+  --tkhelp                       : Show this help
+  --tkclient=<client name regex> : Alsa sequencer client name regex used to find the midi controller client.
+                                 : Use aconnect -l to find your controller port. 
+  --tkport=<port>                : Alsa client sequencer port. Use aconnect -l to find your controller port.
+  --tkplg=<plugin file name>     : Use plugin <file name> to transform & route midi events
+  --tkdump                       : Dump original raw midi flow
+  --tkdumpP                      : Dump raw midi flow after transformation
+
+Example : # LD_PRELOAD=./tkgl_midimapper.so MPC --tkclient=".*MyControllerName.*" --tkport=1 --tkplg=./tmm-plugins/tmm-IamForce2LPMK3.so
+```
+
+To create your own plugin, you need to use C language, used for performance reasons. You need  an ARM toolchain and a C compiler (this will be the subject of a later post). For example, I created a plugin for my A800 master keyboard to launch scenes 1 to 8 from pads 1 to 8, and mapped the play, stop, rec keys to the PLAY, STOP ALL, REC keys of my Force. It's very nice to be able to control the workflow from my master keyboard.
+
+IamForce2 is also fully written as a plugin of midimapper. Currently, the following IamForce2 plugins are available (beta versions) :
+- Iamforce-APCKEY25MK2 Iamforce2 for the Akai APC Key 25 Mini Mk2
+- Iamforce-APCMINIMK2 Iamforce2 for the Akai APC Mini Mk2
+- Iamforce-KIKPADMK3 Iamforce2 for the Kikgen Kikpad LMPK3 emaulation
+- Iamforce-LPMK3 IamForce2 for the Novation Launchpad mini MK3
+- Iamforce-LPX Iamforce for the Novation Launchpad X
+- Iamforce-NONE Iamforce in standalone mode no controller mapping)
 
 See detailed documentation in the WIKI (TBD).
 
 NB: you need ssh access to your MPC.
 
-### TKGL_ANYCTRL  TKGL_ANYCTRL_LT
+### TKGL_ANYCTRL  TKGL_ANYCTRL_LT (deprecated)
 
 These 2 "low-level" libraries allows you to set up any controller as a control surface to drive the MPC standalone application. 
 
