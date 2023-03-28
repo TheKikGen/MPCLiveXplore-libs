@@ -62,6 +62,8 @@ IMAFORCE PLUGIN -- Force Emulation on MPC
 #define IAMFORCE_VERSION "V2.0 BETA"
 
 // MPC Quadran OFFSETS
+// 1 2
+// 3 4
 #define MPC_QUADRAN_1 0
 #define MPC_QUADRAN_2 4
 #define MPC_QUADRAN_3 32
@@ -116,7 +118,7 @@ static const uint8_t IdentityReplySysexHeader[]   = {AKAI_SYSEX_IDENTITY_REPLY_H
 // 1 quadran is 4 MPC pads
 //  Q1 Q2
 //  Q3 Q4
-static int MPCPadQuadran = MPC_QUADRAN_3;
+static int MPCPadQuadran = MPC_QUADRAN_1;
 
 // Force Matrix pads color cache - 10 lines of 8 pads
 static RGBcolor_t Force_PadColorsCache[8*10];
@@ -167,8 +169,9 @@ static void MPCSetMapButtonLed(snd_seq_event_t *ev);
 static void MPCSetMapButton(snd_seq_event_t *ev) ;
 
 static bool ControllerEventReceived(snd_seq_event_t *ev);
-static int ControllerInitialize();
+static int  ControllerInitialize();
 static void IamForceMacro_NextSeq(int step);
+static void MPCRefresCurrentQuadran() ;
 
 // Midi controller specific ----------------------------------------------------
 // Include here your own controller implementation
@@ -294,6 +297,30 @@ static void MPCSetMapButtonLed(snd_seq_event_t *ev) {
   else if ( ev->data.control.param == FORCE_BT_STOP_ALL )   mapVal = MPC_BT_STOP;
   else if ( ev->data.control.param == FORCE_BT_KNOBS )      mapVal = MPC_BT_QLINK_SELECT;
 
+  else if ( ev->data.control.param == FORCE_BT_MUTE )   {
+    if ( ev->data.control.value == 3 ) {
+      CurrentSoloMode = FORCE_SM_MUTE ; // Resynchronize
+    }
+  }
+
+  else if ( ev->data.control.param == FORCE_BT_SOLO )   {
+    if ( ev->data.control.value == 3 ) {
+      CurrentSoloMode = FORCE_SM_SOLO ; // Resynchronize
+    }
+  }
+
+  else if ( ev->data.control.param == FORCE_BT_REC_ARM ) {
+    if ( ev->data.control.value == 3 ) {
+      CurrentSoloMode = FORCE_SM_REC_ARM ; // Resynchronize
+    }
+  }
+
+  else if ( ev->data.control.param == FORCE_BT_CLIP_STOP )   {
+    if ( ev->data.control.value == 3 ) {
+      CurrentSoloMode = FORCE_SM_CLIP_STOP ; // Resynchronize
+    }
+  }
+
   if ( mapVal >=0 ) {
     ev->data.control.param = mapVal;
     SendMidiEvent(ev );
@@ -327,12 +354,25 @@ static void MPCRefreshColumnsPads(bool show) {
     MPCDrawPadsLineFromForceCache(8,4,0);
   }
   else {
-    // Restore initial pads color, 
-    MPCDrawPadsLineFromForceCache(4,0,3);
-    MPCDrawPadsLineFromForceCache(5,0,2);
-    MPCDrawPadsLineFromForceCache(6,0,1);
-    MPCDrawPadsLineFromForceCache(7,0,0);
+    // Restore initial pads color, and take car of current quadran
+    MPCRefresCurrentQuadran() ;
   }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// Show  MPC pads of columns mode (SSM) 
+///////////////////////////////////////////////////////////////////////////////
+static void MPCRefresCurrentQuadran() {
+
+    // Restore initial pads color, and take car of current quadran
+    for ( uint8_t l = 0 ; l < 4 ; l++) {
+      for ( uint8_t c=0 ; c < 4 ; c++ ) {
+
+        uint8_t p = MPCPadQuadran + l*8 + c;
+        DeviceSetPadColor(MPC_Id, (3 - l)*4 + c, Force_PadColorsCache[p].c.r,Force_PadColorsCache[p].c.g,Force_PadColorsCache[p].c.b );
+
+      }
+    }
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -377,10 +417,21 @@ static void MPCSetMapButton(snd_seq_event_t *ev) {
     }
 
     // Pad navigation mode with the MINUS key
+    // If MINUS pressed when in MPCCOlumns pad mode : change mode
     else if ( ev->data.note.note == MPC_BT_MINUS ) {
-      NavigationPadMode = ( ev->data.note.velocity == 0x7F ) ;
-      //tklog_debug("Refresh pads = %d\n",MPCColumnsPadMode);
-      MPCRefreshNavigationPads(NavigationPadMode);
+
+      if ( MPCColumnsPadMode ) { 
+          if ( ev->data.note.velocity == 0x7F ) {
+            if ( ++CurrentSoloMode == FORCE_SM_END ) CurrentSoloMode = 0 ;
+            SendDeviceKeyPress(FORCE_BT_MUTE + CurrentSoloMode);
+            tklog_debug("CurrentMode %d \n",CurrentSoloMode);
+          }
+      }
+      else {
+          NavigationPadMode = ( ev->data.note.velocity == 0x7F ) ;
+          //tklog_debug("Refresh pads = %d\n",MPCColumnsPadMode);
+          MPCRefreshNavigationPads(NavigationPadMode);
+      }
     }
 
     else if (  ev->data.note.note == MPC_BT_ENCODER )      mapVal = FORCE_BT_ENCODER ;
@@ -570,8 +621,14 @@ bool MidiMapper( uint8_t sender, snd_seq_event_t *ev, uint8_t *buffer, size_t si
           while ( buffer[i++] != 0xF7 ) if ( i>= size ) break;
        }
 
+       // Send the sysex to the MPC
+       orig_snd_rawmidi_write(raw_outpub,buffer,size);
+
+       // Refresh special modes
        if ( ColumnsPadMode) ControllerRefreshColumnsPads(true);
        if ( MPCColumnsPadMode) MPCRefreshColumnsPads(true);
+       
+       return false; // Do not allow default send
 
        break;
      }

@@ -387,30 +387,6 @@ static void ControllerSetMapButtonLed(snd_seq_event_t *ev) {
       mapVal2 =  ev->data.control.value == 3 ? 0x7F:00;
     }
 
-    else if ( ev->data.control.param == FORCE_BT_MUTE )   {
-      if ( ev->data.control.value == 3 ) {
-        CurrentSoloMode = FORCE_SM_MUTE ; // Resynchronize
-      }
-    }
-
-    else if ( ev->data.control.param == FORCE_BT_SOLO )   {
-      if ( ev->data.control.value == 3 ) {
-        CurrentSoloMode = FORCE_SM_SOLO ; // Resynchronize
-      }
-    }
-
-    else if ( ev->data.control.param == FORCE_BT_REC_ARM ) {
-      if ( ev->data.control.value == 3 ) {
-        CurrentSoloMode = FORCE_SM_REC_ARM ; // Resynchronize
-      }
-    }
-
-    else if ( ev->data.control.param == FORCE_BT_CLIP_STOP )   {
-      if ( ev->data.control.value == 3 ) {
-        CurrentSoloMode = FORCE_SM_CLIP_STOP ; // Resynchronize
-      }
-    }
-
     if ( mapVal >=0 ) {
         // Send a LED message to the APC Key
         snd_seq_event_t ev2 = *ev;

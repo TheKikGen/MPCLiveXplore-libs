@@ -334,7 +334,7 @@ static void ControllerSetMapButtonLed(snd_seq_event_t *ev) {
     else if ( ev->data.control.param == FORCE_BT_MUTE )   {
       if ( ev->data.control.value == 3 ) {
         mapVal = CTRL_BT_STOP_SM   ;
-        CurrentSoloMode = FORCE_SM_MUTE ; // Resynchronize
+ 
         // Set color of "Stop Solo Mode button"
         mapVal2 = CTRL_COLOR_AMBER ;
       }
@@ -343,7 +343,7 @@ static void ControllerSetMapButtonLed(snd_seq_event_t *ev) {
     else if ( ev->data.control.param == FORCE_BT_SOLO )   {
       if ( ev->data.control.value == 3 ) {
         mapVal = CTRL_BT_STOP_SM   ;
-        CurrentSoloMode = FORCE_SM_SOLO ; // Resynchronize
+
         // Set color of "Stop Solo Mode button"
         mapVal2 = CTRL_COLOR_BLUE ;
       }
@@ -352,7 +352,7 @@ static void ControllerSetMapButtonLed(snd_seq_event_t *ev) {
     else if ( ev->data.control.param == FORCE_BT_REC_ARM ) {
       if ( ev->data.control.value == 3 ) {
         mapVal = CTRL_BT_STOP_SM   ;
-        CurrentSoloMode = FORCE_SM_REC_ARM ; // Resynchronize
+       
         // Set color of "Stop Solo Mode button"
         mapVal2 = CTRL_COLOR_RED ;
       }
@@ -361,7 +361,7 @@ static void ControllerSetMapButtonLed(snd_seq_event_t *ev) {
     else if ( ev->data.control.param == FORCE_BT_CLIP_STOP )   {
       if ( ev->data.control.value == 3 ) {
         mapVal = CTRL_BT_STOP_SM   ;
-        CurrentSoloMode = FORCE_SM_CLIP_STOP ; // Resynchronize
+   
         // Set color of "Stop Solo Mode button"
         mapVal2 = CTRL_COLOR_GREEN ;
       }
