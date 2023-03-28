@@ -704,7 +704,7 @@ int GetSeqPortFromDestinationId(uint8_t destId ) {
 // Set a Force/MPC pad color 
 ///////////////////////////////////////////////////////////////////////////////
 // 2 implementations : call with a 32 bits color int value or with r,g,b values
-void DeviceSetPadColor(const uint8_t mpcId, const uint8_t padNumber, const uint8_t r,const uint8_t g,const uint8_t b ) {
+void DeviceSetPadColorRGB(const uint8_t mpcId, const uint8_t padNumber, const uint8_t r,const uint8_t g,const uint8_t b ) {
 
   uint8_t sysexBuff[128];
   int p = 0;
@@ -741,7 +741,7 @@ void DeviceSetPadColor(const uint8_t mpcId, const uint8_t padNumber, const uint8
 
 }
 
-void DeviceSetPadColorRGB(const uint8_t mpcId, const uint8_t padNumber, const uint32_t rgbColorValue) {
+void DeviceSetPadColorValue(const uint8_t mpcId, const uint8_t padNumber, const uint32_t rgbColorValue) {
 
   // Colors R G B max value is 7f in SYSEX. So the bit 8 is always set to 0.
   RGBcolor_t col = { .v = rgbColorValue};
@@ -750,7 +750,7 @@ void DeviceSetPadColorRGB(const uint8_t mpcId, const uint8_t padNumber, const ui
   uint8_t g = col.c.g ;
   uint8_t b = col.c.b;
 
-  DeviceSetPadColor(mpcId, padNumber, r, g , b );
+  DeviceSetPadColorRGB(mpcId, padNumber, r, g , b );
 
 }
 

@@ -77,11 +77,14 @@ __ __| |           |  /_) |     ___|             |           |\n\
 #define POWER_SUPPLY_STATUS "Full"
 #define POWER_SUPPLY_CAPACITY "100"
 
-// Colors R G B (nb . max r g b value is 7f. The bit 8 is always set )
-#define COLOR_BLACK      0x000000
-#define COLOR_FIRE       0x060101
-#define COLOR_TANGERINE  0x060201
+// Colors R G B (nb . max r g b value is 7f / 7 bits  due to midi)
+
+// Standard Foce Colors
+#define COLOR_FIRE       0x7F1919
+#define COLOR_ORANGE     0x7F3F19
+#define COLOR_TANGERINE  0x7F3419
 #define COLOR_APRICOT    0x7F5019
+#define COLOR_YELLOW     0x767617
 #define COLOR_CANARY     0x7F6E19
 #define COLOR_LEMON      0x757F19
 #define COLOR_CHARTREUSE 0x5A7F19
@@ -93,6 +96,7 @@ __ __| |           |  /_) |     ___|             |           |\n\
 #define COLOR_CYAN       0x197C7F
 #define COLOR_SKY        0x195D7F
 #define COLOR_AZURE      0x19427F
+#define COLOR_GREY       0x113D56
 #define COLOR_MIDNIGHT   0x19277F
 #define COLOR_INDIGO     0x3A197F
 #define COLOR_VIOLET     0x46197F
@@ -100,40 +104,16 @@ __ __| |           |  /_) |     ___|             |           |\n\
 #define COLOR_FUSHIA     0x7F197F
 #define COLOR_MAGENTA    0x7F1964
 #define COLOR_CORAL      0x7F1949
+#define COLOR_GREEN      0x125A39
 
-// Fire
-// Orange
-// Tangerine
-// Apricot
-// Yellow
-// Canary
-// Lemon
-// Chartreuse
-// Neon
-// Lime
-// Clover
-// Sea
-// Mint
-// Cyan
-// Sky
-// Azure
-// Grey
-// Midnight
-// Indigo
-// Violet
-// Grape
-// Fuschia
-// Magenta
-// Coral
-// Green
-
-#define COLOR_WHITE      0x7F7F7F
-#define COLOR_BLACK      0x000000
-#define COLOR_RED        0x7F0000
-#define COLOR_BLUE       0x00007F
-#define COLOR_GREEN      0x007F00
-#define COLOR_YELLOW     0x007F7F
-#define COLOR_MAGENTA2   0x7F007F
+// Bright colors
+#define COLOR_WHITE        0x7F7F7F
+#define COLOR_BLACK        0x000000
+#define COLOR_FULL_RED     0x7F0000
+#define COLOR_FULL_GREEN   0x007F00
+#define COLOR_FULL_BLUE    0x00007F
+#define COLOR_FULL_YELLOW  0x007F7F
+#define COLOR_FULL_MAGENTA 0x7F007F
 
 // Force buttons
 #define FORCE_BT_ENCODER 0x6F
@@ -415,5 +395,5 @@ int GetSeqPortFromDestinationId(uint8_t destId );
 void SendDeviceKeyEvent(uint8_t key,uint8_t value);
 void SendDeviceKeyPress(uint8_t key);
 static int ControllerGetPadIndex(uint8_t padF) ;
-void DeviceSetPadColor(const uint8_t mpcId, const uint8_t padNumber, const uint8_t r,const uint8_t g,const uint8_t b ) ;
-void DeviceSetPadColorRGB(const uint8_t mpcId, const uint8_t padNumber, const uint32_t rgbColorValue);
+void DeviceSetPadColorRGB(const uint8_t mpcId, const uint8_t padNumber, const uint8_t r,const uint8_t g,const uint8_t b ) ;
+void DeviceSetPadColorValue(const uint8_t mpcId, const uint8_t padNumber, const uint32_t rgbColorValue);
