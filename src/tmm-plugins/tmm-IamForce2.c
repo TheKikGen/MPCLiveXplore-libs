@@ -750,16 +750,13 @@ bool MidiMapper( uint8_t sender, snd_seq_event_t *ev, uint8_t *buffer, size_t si
              // Mpc Pads on channel 9
              if ( ev->data.note.channel == 9 ) {
 
-               // Check if navigation pad mode is active 
-               if ( MPCNavigationPadMode ) {
+              int padF = MPCGetForcePadNote(ev->data.note.note) - FORCEPADS_NOTE_OFFSET;
+
+              // Check if navigation pad mode is active 
+              if ( MPCNavigationPadMode ) {
 
                     if ( ev->type == SND_SEQ_EVENT_NOTEON ) {
                         
-                        tklog_debug("PAD NOTE ON column mode  %02X \n",ev->data.note.note);
-                        int padF = MPCGetForcePadNote(ev->data.note.note);
-                        if ( padF < 0 ) return false;
-                        padF -= FORCEPADS_NOTE_OFFSET;
-
                         // Check MPC Columns modes
                         // ----------------------------------------------------
                         // | LAUNCH 1 |           |           |  Navigation |
@@ -778,7 +775,7 @@ bool MidiMapper( uint8_t sender, snd_seq_event_t *ev, uint8_t *buffer, size_t si
                         case MPC_PAD_9:
                         case MPC_PAD_13:
                           // Launch the right line
-                          tklog_debug("Launch PadF %d \n",padF);
+                          //tklog_debug("Launch PadF %d \n",padF);
                           SendDeviceKeyPress(FORCE_BT_LAUNCH_1 + padF / 8);
                           break;
 
@@ -797,7 +794,7 @@ bool MidiMapper( uint8_t sender, snd_seq_event_t *ev, uint8_t *buffer, size_t si
                            break;
 
                         // Navigate
-                        case MPC_PAD_15:
+                        case MPC_PAD_16:
                            SendDeviceKeyPress(FORCE_BT_NAVIGATE);
                            break;
 
@@ -823,9 +820,44 @@ bool MidiMapper( uint8_t sender, snd_seq_event_t *ev, uint8_t *buffer, size_t si
                      
                     return false;
                } 
+              else 
+              if ( MPCColumnsPadMode ) {
+                  
+                  if ( ev->type == SND_SEQ_EVENT_KEYPRESS ) return false;
 
+                  uint8_t padM = MPCGetPadIndexFromNote(ev->data.note.note);
+                  uint8_t padMC = padM %4;
+                  uint8_t padML = padM /4;
 
-               ev->data.note.note = MPCGetForcePadNote(ev->data.note.note);
+                  ev->data.note.channel = 0;
+
+                  // Column pads
+                  if ( padML == 1 || padML == 3 ) {
+
+                      ev->data.note.note = FORCE_BT_COLUMN_PAD1 + padMC + ( padML == 1 ? 4 : 0) ;
+                      ev->data.note.velocity = ( ev->data.note.velocity > 0 ? 0x7F:00);
+                  } 
+                  else {
+                      ev->data.note.note = FORCE_BT_MUTE_PAD1 + padMC + ( padML == 0 ? 4 : 0);
+                      ev->data.note.velocity = ( ev->data.note.velocity > 0 ? 0x7F:00);
+                  }     
+              } 
+              
+              else {
+
+                  // Pads as usual
+                  ev->data.note.note = padF ;
+
+                  // If Shift Mode, simulate Select key
+                  if ( ShiftMode ) {
+                    SendDeviceKeyEvent(FORCE_BT_SELECT,0x7F);
+                    SendMidiEvent(ev);
+                    SendDeviceKeyEvent(FORCE_BT_SELECT,0);
+                    return false;
+                  }
+
+              }
+             
              }
 
              break;

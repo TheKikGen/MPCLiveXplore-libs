@@ -548,12 +548,12 @@ static bool ControllerEventReceived(snd_seq_event_t *ev) {
 
             else if ( padFL == 6 ) { // Column pads (on the mini launchpad)
               ev->data.note.note = FORCE_BT_COLUMN_PAD1 + padFC;
-              ev->data.note.velocity == ( ev->data.note.velocity > 0 ? 0x7F:00);
+              ev->data.note.velocity = ( ev->data.note.velocity > 0 ? 0x7F:00);
 
             }
             else if ( padFL == 7 ) { // Mute mode pads (on the mini lLaunchpad)
               ev->data.note.note = FORCE_BT_MUTE_PAD1 + padFC;
-              ev->data.note.velocity == ( ev->data.note.velocity > 0 ? 0x7F:00);
+              ev->data.note.velocity = ( ev->data.note.velocity > 0 ? 0x7F:00);
             }
         }
         else { 

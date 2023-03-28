@@ -633,12 +633,12 @@ static bool ControllerEventReceived(snd_seq_event_t *ev) {
 
               else if ( padFL == 1 ) { // Column pads
                 ev->data.note.note = FORCE_BT_COLUMN_PAD1 + padFC;
-                ev->data.note.velocity == ( ev->data.note.velocity > 0 ? 0x7F:00);
+                ev->data.note.velocity = ( ev->data.note.velocity > 0 ? 0x7F:00);
 
               }
               else if ( padFL == 0 ) { // Mute mode pads
                 ev->data.note.note = FORCE_BT_MUTE_PAD1 + padFC;
-                ev->data.note.velocity == ( ev->data.note.velocity > 0 ? 0x7F:00);
+                ev->data.note.velocity = ( ev->data.note.velocity > 0 ? 0x7F:00);
               }
           }
           else
