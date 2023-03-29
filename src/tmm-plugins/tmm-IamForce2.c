@@ -133,6 +133,10 @@ static bool ShiftMode=false;
 // Special Solo mute mode fro MPC
 // Holding shift will activate the shift mode
 static bool MPCColumnsPadMode=false;
+static bool MPCColumnsPadModeLocked = false;
+
+// Pad navigation mode
+static bool  MPCNavigationPadMode = false;
 
 // Shift mode within controller
 static bool CtrlShiftMode = false;
@@ -140,9 +144,6 @@ static bool CtrlShiftMode = false;
 // Column pads Mode
 static bool ColumnsPadMode = false;
 static bool ColumnsPadModeLocked = false;
-
-// Pad navigation mode
-static bool  MPCNavigationPadMode = false;
 
 // Current Solo Mode
 static int CurrentSoloMode = FORCE_SM_SOLO;
@@ -154,7 +155,7 @@ static bool KnobShiftMode = false;
 static bool KnobTouch = false;
 
 // USed by next seq macro
-static int CurrentSequence = 0;
+static int CurrentSequence = -1;
 static int CurrentMatrixVOffset=0;
 
 // Quadran for external controller (none by default)
@@ -409,9 +410,9 @@ static void MPCRefresCurrentQuadran() {
 static void MPCRefreshNavigationPads(bool show) {
  if ( show ) {
     // ----------------------------------------------------
-    // | LAUNCH 1 |           |           |  Navigation |
+    // | LAUNCH 1 |  First SEQ |   PREV SEQ |  NEXT SEQ |
     // ----------------------------------------------------
-    // | LAUNCH 2 |          |   LEFT    |    RIGHT    |    
+    // | LAUNCH 2 |  LAST SEQ |   LEFT    |    RIGHT    |    
     // ----------------------------------------------------
     // | LAUNCH 3 |    UP    |  Quadran 1 | Quandran 2  |
     // ---------------------------------------------------
@@ -430,14 +431,11 @@ static void MPCRefreshNavigationPads(bool show) {
     DeviceSetPadColorValue(MPC_Id,10, COLOR_FULL_GREEN );
     DeviceSetPadColorValue(MPC_Id,11, COLOR_FULL_GREEN );
  
-    // Navigation button
+    // Sequence buttons
     DeviceSetPadColorValue(MPC_Id,15, COLOR_FULL_BLUE );
-
-    // Empty
-    DeviceSetPadColorValue(MPC_Id,9, COLOR_BLACK );
-    DeviceSetPadColorValue(MPC_Id,13, COLOR_BLACK );
-    DeviceSetPadColorValue(MPC_Id,14, COLOR_BLACK );
-    
+    DeviceSetPadColorValue(MPC_Id,14, COLOR_FULL_BLUE );
+    DeviceSetPadColorValue(MPC_Id,13, COLOR_FULL_MAGENTA );
+    DeviceSetPadColorValue(MPC_Id,9,  COLOR_FULL_MAGENTA );  
  
 
   }
@@ -750,8 +748,6 @@ bool MidiMapper( uint8_t sender, snd_seq_event_t *ev, uint8_t *buffer, size_t si
              // Mpc Pads on channel 9
              if ( ev->data.note.channel == 9 ) {
 
-              int padF = MPCGetForcePadNote(ev->data.note.note) - FORCEPADS_NOTE_OFFSET;
-
               // Check if navigation pad mode is active 
               if ( MPCNavigationPadMode ) {
 
@@ -759,15 +755,17 @@ bool MidiMapper( uint8_t sender, snd_seq_event_t *ev, uint8_t *buffer, size_t si
                         
                         // Check MPC Columns modes
                         // ----------------------------------------------------
-                        // | LAUNCH 1 |           |           |  Navigation |
+                        // | LAUNCH 1 |  First SEQ |   PREV SEQ |  NEXT SEQ |
                         // ----------------------------------------------------
-                        // | LAUNCH 2 |          |   LEFT    |    RIGHT    |    
+                        // | LAUNCH 2 |  LAST SEQ |   LEFT    |    RIGHT    |    
                         // ----------------------------------------------------
                         // | LAUNCH 3 |    UP    |  Quadran 1 | Quandran 2  |
                         // ---------------------------------------------------
                         // | LAUNCH 4 |    DOWN  | Quadran 3  | Quadran 4   |
                         // ----------------------------------------------------
 
+                        int padF = MPCGetForcePadNote(ev->data.note.note) - FORCEPADS_NOTE_OFFSET;
+ 
                         switch (ev->data.note.note)
                         {
                         case MPC_PAD_1:
@@ -793,9 +791,18 @@ bool MidiMapper( uint8_t sender, snd_seq_event_t *ev, uint8_t *buffer, size_t si
                            MPCPadQuadran = MPC_QUADRAN_2; 
                            break;
 
-                        // Navigate
+                        // Sequence macros
                         case MPC_PAD_16:
-                           SendDeviceKeyPress(FORCE_BT_NAVIGATE);
+                           IamForceMacro_NextSeq(1);
+                           break;
+                        case MPC_PAD_15:
+                           IamForceMacro_NextSeq(-1);
+                           break;
+                        case MPC_PAD_14:
+                           IamForceMacro_NextSeq(-8);
+                           break;
+                        case MPC_PAD_10:
+                           IamForceMacro_NextSeq(8);
                            break;
 
                         // Arrows
@@ -846,7 +853,7 @@ bool MidiMapper( uint8_t sender, snd_seq_event_t *ev, uint8_t *buffer, size_t si
               else {
 
                   // Pads as usual
-                  ev->data.note.note = padF ;
+                  ev->data.note.note = MPCGetForcePadNote(ev->data.note.note) ;
 
                   // If Shift Mode, simulate Select key
                   if ( ShiftMode ) {
@@ -968,6 +975,6 @@ static void IamForceMacro_NextSeq(int step) {
         SendDeviceKeyPress(FORCE_BT_UP); 
     }
   }
-
+tklog_debug("Current suequence = %d\n",CurrentSequence);
   SendDeviceKeyPress(FORCE_BT_LAUNCH_1 + CurrentSequence); 
 }
