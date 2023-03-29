@@ -799,10 +799,10 @@ bool MidiMapper( uint8_t sender, snd_seq_event_t *ev, uint8_t *buffer, size_t si
                            IamForceMacro_NextSeq(-1);
                            break;
                         case MPC_PAD_14:
-                           IamForceMacro_NextSeq(-8);
+                           IamForceMacro_NextSeq(0);
                            break;
                         case MPC_PAD_10:
-                           IamForceMacro_NextSeq(8);
+                           IamForceMacro_NextSeq(100);
                            break;
 
                         // Arrows
@@ -915,11 +915,11 @@ bool MidiMapper( uint8_t sender, snd_seq_event_t *ev, uint8_t *buffer, size_t si
                     break;
 
                   case IAMFORCE_CC_MACRO_FIRST_SEQ:
-                    if ( ev->data.control.value > 0 ) IamForceMacro_NextSeq(-8);
+                    if ( ev->data.control.value > 0 ) IamForceMacro_NextSeq(0);
                     break;
 
                   case IAMFORCE_CC_MACRO_LAST_SEQ:
-                    if ( ev->data.control.value > 0 ) IamForceMacro_NextSeq(8);
+                    if ( ev->data.control.value > 0 ) IamForceMacro_NextSeq(100);
                     break;
 
                   case IAMFORCE_CC_MACRO_ARP:
@@ -960,7 +960,9 @@ bool MidiMapper( uint8_t sender, snd_seq_event_t *ev, uint8_t *buffer, size_t si
 
 static void IamForceMacro_NextSeq(int step) {
 
-  CurrentSequence += step;
+  if ( step == 100 ) CurrentSequence = 7;
+  else if (step == 0) CurrentSequence = 0;
+  else CurrentSequence += step;
 
   if ( CurrentSequence > 7  ) {
         CurrentSequence = 7;
@@ -975,6 +977,6 @@ static void IamForceMacro_NextSeq(int step) {
         SendDeviceKeyPress(FORCE_BT_UP); 
     }
   }
-tklog_debug("Current suequence = %d\n",CurrentSequence);
+//tklog_debug("Current suequence = %d\n",CurrentSequence);
   SendDeviceKeyPress(FORCE_BT_LAUNCH_1 + CurrentSequence); 
 }
