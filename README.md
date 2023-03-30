@@ -8,6 +8,8 @@
 Special libraries and code for MPC and Force devices
 NB : You need SSH images uopdate to use these libraries.
 
+For detailed documentation, check the [wiki](https://github.com/TheKikGen/MPCLiveXplore-libs/edit/main/README.md).
+
 ### TKGL_MIDIMAPPER
 
 This LD_PRELOAD library allows you to reconfigure the keys inaccessible in midi learn like PLAY START, STOP on the MPC, or LAUNCH, MATRIX, MIXER on the Force for example. A plugin system allows to load the configuration designed for the midi device you are using. 
