@@ -8,7 +8,7 @@
 Special libraries and code for MPC and Force devices
 NB : You need SSH images uopdate to use these libraries.
 
-For detailed documentation, check the [wiki](https://github.com/TheKikGen/MPCLiveXplore-libs/edit/main/README.md).
+For detailed documentation, check the [wiki](https://github.com/TheKikGen/MPCLiveXplore-libs/wiki).
 
 ### TKGL_MIDIMAPPER
 
