@@ -103,7 +103,7 @@ show columns pads permanenently.
 */
 
 #define IAMFORCE_DRIVER_VERSION "1.0"
-#define IAMFORCE_DRIVER_ID "LPROMK3"
+#define IAMFORCE_DRIVER_ID "LPPROMK3"
 #define IAMFORCE_DRIVER_NAME "Novation Launchpad Pro Mk3"
 #define IAMFORCE_ALSASEQ_DEFAULT_CLIENT_NAME "Launchpad Pro Mk3"
 #define IAMFORCE_ALSASEQ_DEFAULT_PORT 1
