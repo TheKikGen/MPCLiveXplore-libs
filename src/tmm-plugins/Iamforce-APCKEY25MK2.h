@@ -139,7 +139,9 @@ static void ControllerSetMultiPadsColorRGB(uint8_t padCtFrom, uint8_t padCtTo, u
   //  F7
 
   // APC key colors range is 0 - 255. Force is 0 - 127
-  r <<= 1 ;  g <<= 1 ; b <<=  1;
+  r = ((float)r * 2.008);
+  g = ((float)g * 2.008);
+  b = ((float)b * 2.008);
 
   SX_APCK_LED_RGB_COLOR[7]  = padCtFrom;
   SX_APCK_LED_RGB_COLOR[8]  = padCtTo;
@@ -470,8 +472,11 @@ static bool ControllerEventReceived(snd_seq_event_t *ev) {
           // NB : Release is a note off (0x80)  + velocity zero. We test nonly velocity here.
           int mapVal = -1;
 
+          // SHIFT.  Also used to lock the columns pad mode
           if       ( ev->data.note.note == CTRL_BT_SHIFT) {
             CtrlShiftMode = ( ev->data.note.velocity == 0x7F );
+            if ( ControllerColumnsPadMode && CtrlShiftMode ) ControllerColumnsPadModeLocked = ! ControllerColumnsPadModeLocked;
+
             return false;
           }
 
@@ -482,9 +487,9 @@ static bool ControllerEventReceived(snd_seq_event_t *ev) {
           else if  ( ev->data.note.note == CTRL_BT_STOP_ALL_CLIPS  ) {
             if ( CtrlShiftMode) mapVal = FORCE_BT_STOP ;
             else {
-              ColumnsPadMode = ( ev->data.note.velocity == 0x7F ) || ColumnsPadModeLocked ;
-              //tklog_debug("Column mode => %s \n", ColumnsPadMode ? "True":"False");
-              ControllerRefreshColumnsPads(ColumnsPadMode);
+              ControllerColumnsPadMode = ( ev->data.note.velocity == 0x7F ) || ControllerColumnsPadModeLocked ;
+              //tklog_debug("Column mode => %s \n", ControllerColumnsPadMode ? "True":"False");
+              ControllerRefreshColumnsPads(ControllerColumnsPadMode);
               return false;
             }
           }
@@ -492,14 +497,14 @@ static bool ControllerEventReceived(snd_seq_event_t *ev) {
           // UP / COPY / QUADRAN
           else if  ( ev->data.note.note == CTRL_BT_TRACK_1  ) {
             // Quadran shift on / off
-            if ( ColumnsPadMode ) {
+            if ( ControllerColumnsPadMode ) {
               
               if ( ev->data.note.velocity != 0 ) {
                 CtrlPadQuadran = ( CtrlPadQuadran == CTRL_TOP_QUADRAN ? CTRL_BOTTOM_QUADRAN: CTRL_TOP_QUADRAN ) ;
                 ControllerRefreshMatrixFromForceCache();
                 ControllerRefreshLaunchLedsFromForceCache();
               } 
-              else ControllerRefreshColumnsPads(ColumnsPadMode);
+              else ControllerRefreshColumnsPads(ControllerColumnsPadMode);
 
               return false;
             } 
@@ -512,12 +517,12 @@ static bool ControllerEventReceived(snd_seq_event_t *ev) {
           }
           // Shit = LEFT / EDIT - Column mode : Assign A
           else if  ( ev->data.note.note == CTRL_BT_TRACK_3  ) {
-            mapVal = ColumnsPadMode ? FORCE_BT_ASSIGN_A : ( CtrlShiftMode ? FORCE_BT_LEFT : FORCE_BT_EDIT ) ;
+            mapVal = ControllerColumnsPadMode ? FORCE_BT_ASSIGN_A : ( CtrlShiftMode ? FORCE_BT_LEFT : FORCE_BT_EDIT ) ;
           }
 
           // Right / Step Seq - Column mode : Assign B
           else if  ( ev->data.note.note == CTRL_BT_TRACK_4  ) {
-            mapVal = ColumnsPadMode ? FORCE_BT_ASSIGN_B : ( mapVal == CtrlShiftMode ? FORCE_BT_RIGHT :FORCE_BT_STEP_SEQ );
+            mapVal = ControllerColumnsPadMode ? FORCE_BT_ASSIGN_B : ( mapVal == CtrlShiftMode ? FORCE_BT_RIGHT :FORCE_BT_STEP_SEQ );
           }
 
           // Volume / Mixer / Master
@@ -555,12 +560,12 @@ static bool ControllerEventReceived(snd_seq_event_t *ev) {
           // Launch 5 (Select) / STOP ALL In COLUMN MODE / Shift = Knobs select
           else if  ( ev->data.note.note == CTRL_BT_LAUNCH_5  ) {
             if ( CtrlShiftMode) mapVal = FORCE_BT_KNOBS ;
-            else mapVal = ColumnsPadMode ? FORCE_BT_STOP_ALL : ControllerGetForceLaunchBt(ev->data.note.note);
+            else mapVal = ControllerColumnsPadMode ? FORCE_BT_STOP_ALL : ControllerGetForceLaunchBt(ev->data.note.note);
           }
 
           // Launch 4 / REC ARM
           else if  ( ev->data.note.note == CTRL_BT_LAUNCH_4  ) {
-            if ( ColumnsPadMode ) {
+            if ( ControllerColumnsPadMode ) {
               CurrentSoloMode = FORCE_SM_REC_ARM ;
               mapVal = SoloModeButtonMap[CurrentSoloMode];
             }
@@ -569,7 +574,7 @@ static bool ControllerEventReceived(snd_seq_event_t *ev) {
 
           // Launch 3 / Mute
           else if  ( ev->data.note.note == CTRL_BT_LAUNCH_3  ) {
-            if ( ColumnsPadMode ) {
+            if ( ControllerColumnsPadMode ) {
               CurrentSoloMode = FORCE_SM_MUTE ;
               mapVal = SoloModeButtonMap[CurrentSoloMode];
             }
@@ -578,7 +583,7 @@ static bool ControllerEventReceived(snd_seq_event_t *ev) {
 
           // Launch 2 / Solo
           else if  ( ev->data.note.note == CTRL_BT_LAUNCH_2  ) {
-            if ( ColumnsPadMode ) {
+            if ( ControllerColumnsPadMode ) {
               CurrentSoloMode = FORCE_SM_SOLO ;
               mapVal = SoloModeButtonMap[CurrentSoloMode];
             }
@@ -587,7 +592,7 @@ static bool ControllerEventReceived(snd_seq_event_t *ev) {
 
           // Launch 1 / Clip Stop
           else if  ( ev->data.note.note == CTRL_BT_LAUNCH_1  ) {
-            if ( ColumnsPadMode ) {
+            if ( ControllerColumnsPadMode ) {
               CurrentSoloMode = FORCE_SM_CLIP_STOP ;
               mapVal = SoloModeButtonMap[CurrentSoloMode];
             }
@@ -605,7 +610,7 @@ static bool ControllerEventReceived(snd_seq_event_t *ev) {
 
           // If controller column mode, simulate the columns and mutes pads
           // and track edit with pads on line 0
-          if ( ColumnsPadMode) {
+          if ( ControllerColumnsPadMode) {
 
               if ( ev->type == SND_SEQ_EVENT_KEYPRESS ) return false;
 

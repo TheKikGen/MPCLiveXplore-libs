@@ -142,7 +142,10 @@ static void ControllerSetMultiPadsColorRGB(uint8_t padCtFrom, uint8_t padCtTo, u
   //  F7
 
   // APC key colors range is 0 - 255. Force is 0 - 127
-  r <<= 1 ;  g <<= 1 ; b <<=  1;
+  r = ((float)r * 2.008);
+  g = ((float)g * 2.008);
+  b = ((float)b * 2.008);
+  
 
   SX_APCM_LED_RGB_COLOR[7]  = padCtFrom;
   SX_APCM_LED_RGB_COLOR[8]  = padCtTo;
@@ -224,6 +227,7 @@ static uint8_t ControllerGetLaunchLedValue(uint8_t ledF) {
 
   return ledF;
 }
+
 ///////////////////////////////////////////////////////////////////////////////
 // Refresh columns mode lines 7 & 8 on the LaunchPad
 ///////////////////////////////////////////////////////////////////////////////
@@ -254,7 +258,6 @@ static int ControllerInitialize() {
   SX_APCM_PAD_MODEDRUM_MODE_SET[7] = APCM_PAD_MOD_OFF;
   SeqSendRawMidi( TO_CTRL_EXT,SX_APCM_PAD_MODEDRUM_MODE_SET,sizeof(SX_APCM_PAD_MODEDRUM_MODE_SET) );
 
-  
   ControllerFillPadMatrixColorRGB(0x7F,0,0);
 
 }
@@ -390,63 +393,69 @@ static bool ControllerEventReceived(snd_seq_event_t *ev) {
               ControllerRefreshMatrixFromForceCache();
 
             }  
-      //       // Cancel Drum mode, and set the Key mode
-      //       else if ( APCCurrentPadMode == APCM_PAD_MOD_DRUM ) {
-      //         // Reset pad mode to normal - F0 47 7F 4F 62 00 01 00 F7
-      //        tklog_debug("Pad mode DRUM\n",APCCurrentPadMode);
-
-      //         SX_APCM_PAD_MODEDRUM_MODE_SET[7] = APCM_PAD_MOD_OFF;
-      //         SeqSendRawMidi( TO_CTRL_EXT,SX_APCM_PAD_MODEDRUM_MODE_SET,sizeof(SX_APCM_PAD_MODEDRUM_MODE_SET) );
-
-      //         // Simulate the NOTE KEY
-      //         SendDeviceKeyPress(FORCE_BT_NOTE);
-      //         ControllerRefreshMatrixFromForceCache();
-
-      //       }            
+              
       }
 
       return false;
       break;
 
     case SND_SEQ_EVENT_CONTROLLER:
-      if ( ev->data.control.channel == 0 ) {
+      // if ( ev->data.control.channel == 0 ) {
 
-        // Knob 1 - 8
-        // if ( ev->data.control.param >= CTRL_KNOB_1 && ev->data.control.param  <= CTRL_KNOB_8 ) {
+      //   // Knob 1 - 8
+      //   if ( ev->data.control.param >= CTRL_FADER_1 && ev->data.control.param  <= CTRL_FADER_8 ) {
 
-        //   static uint8_t lastKnob = 0xFF;
+      //     static uint8_t lastKnob = 0xFF;
+      //     static uint8_t lastKnobVal[] = { 0xFF, 0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF };
 
-        //   SetMidiEventDestination(ev,TO_MPC_PRIVATE );
+      //     SetMidiEventDestination(ev,TO_MPC_PRIVATE );
 
-        //   uint8_t k = ev->data.control.param - CTRL_KNOB_1 ;
-        //   //tklog_debug("Knob no %d\n",k);
+      //     uint8_t k = ev->data.control.param - CTRL_FADER_1 ;
+      //     uint8_t v = ev->data.control.value  ;
+          
+      //     tklog_debug("Knob no %d\n",k);
 
-        //   // Remap controller
-        //   ev->data.control.param = FORCE_KN_QLINK_1 + k;
-        //   //tklog_debug("Knob remap %02x\n",ev->data.control.param);
+      //     // Remap controller
+      //     ev->data.control.param = FORCE_KN_QLINK_1 + k;
+      //     //tklog_debug("Knob remap %02x\n",ev->data.control.param);
 
-        //   if ( lastKnob != k  ) {
-        //     snd_seq_event_t ev2 = *ev;
-        //     ev2.data.note.channel = 0;
-        //     SetMidiEventDestination(&ev2,TO_MPC_PRIVATE );
+      //     if ( lastKnob != k  ) {
+      //       snd_seq_event_t ev2 = *ev;
+      //       ev2.data.note.channel = 0;
+      //       SetMidiEventDestination(&ev2,TO_MPC_PRIVATE );
 
-        //     if ( lastKnob != 0xFF) {
-        //       // Simulate an "untouch", but not the first time
-        //       ev2.type = SND_SEQ_EVENT_NOTEOFF;
-        //       ev2.data.note.velocity = 0x00;
-        //       ev2.data.note.note = FORCE_BT_QLINK1_TOUCH + lastKnob ;
-        //       SendMidiEvent(&ev2 );
-        //     }
+      //       if ( lastKnob != 0xFF) {
+      //         // Simulate an "untouch", but not the first time
+      //         ev2.type = SND_SEQ_EVENT_NOTEOFF;
+      //         ev2.data.note.velocity = 0x00;
+      //         ev2.data.note.note = FORCE_BT_QLINK1_TOUCH + lastKnob ;
+      //         SendMidiEvent(&ev2 ); 
+      //       }
 
-        //     // Simulate a "touch" knob
-        //     ev2.type = SND_SEQ_EVENT_NOTEON;
-        //     ev2.data.note.velocity = 0x7F;
-        //     ev2.data.note.note = FORCE_BT_QLINK1_TOUCH + k ;
-        //     SendMidiEvent(&ev2 );
-        //   }
+      //       // Simulate a "touch" knob
+      //       ev2.type = SND_SEQ_EVENT_NOTEON;
+      //       ev2.data.note.velocity = 0x7F;
+      //       ev2.data.note.note = FORCE_BT_QLINK1_TOUCH + k ;
+      //       SendMidiEvent(&ev2 );
+      //     }
+      //     // Simulate knob rotation clock wise / anticlockwise
+      //     uint8_t r = 0;
+      //     if ( lastKnobVal[k] != 0xFF) {
+      //         if ( v > lastKnobVal[k] ) r = 1; //v - lastKnobVal[k] ;
+      //         else r = 0x7F ;//- (lastKnobVal[k] - v) ;
+      //     }
+      //     ev->data.control.value = r;
+      //     tklog_debug("Kbob %d - val %d - r %d \n",k,v,r);
+ 
+      //     lastKnob = k;
+      //     lastKnobVal[k] = v ;
 
-        //  lastKnob = k;
-        }
+
+      //     // If shift holded, do not send value...
+      //     if ( CtrlShiftMode || r == 0 || v%2 ) return false;
+
+      //   }
+      // }
       break;
 
     case SND_SEQ_EVENT_NOTEON:
@@ -461,8 +470,10 @@ static bool ControllerEventReceived(snd_seq_event_t *ev) {
           // NB : Release is a note off (0x80)  + velocity zero. We test only velocity here.
           int mapVal = -1;
 
+          // SHIFT.  Also used to lock the columns pad mode
           if       ( ev->data.note.note == CTRL_BT_SHIFT) {
             CtrlShiftMode = ( ev->data.note.velocity == 0x7F );
+            if ( ControllerColumnsPadMode && CtrlShiftMode ) ControllerColumnsPadModeLocked = ! ControllerColumnsPadModeLocked;
             return false;
           }
 
@@ -472,10 +483,10 @@ static bool ControllerEventReceived(snd_seq_event_t *ev) {
           else if  ( ev->data.note.note == CTRL_BT_TRACK_8  ) {
             if ( CtrlShiftMode) mapVal = FORCE_BT_RIGHT ;
             else {
-              ColumnsPadMode = ( ( ev->data.note.velocity == 0x7F ) || ColumnsPadModeLocked );
-              //tklog_debug("Column mode => %s \n", ColumnsPadMode ? "True":"False");
+              ControllerColumnsPadMode = ( ( ev->data.note.velocity == 0x7F ) || ControllerColumnsPadModeLocked );
+              //tklog_debug("Column mode => %s \n", ControllerColumnsPadMode ? "True":"False");
               //if ( APCCurrentPadMode == APCM_PAD_MOD_OFF ) 
-              ControllerRefreshColumnsPads(ColumnsPadMode);
+              ControllerRefreshColumnsPads(ControllerColumnsPadMode);
               return false;
             }
           }
@@ -517,7 +528,7 @@ static bool ControllerEventReceived(snd_seq_event_t *ev) {
 
           // Launch 1 / Clip Stop
           else if  ( ev->data.note.note == CTRL_BT_LAUNCH_1  ) {
-            if ( ColumnsPadMode ) {
+            if ( ControllerColumnsPadMode ) {
               CurrentSoloMode = FORCE_SM_CLIP_STOP ;
               mapVal = SoloModeButtonMap[CurrentSoloMode];
             }
@@ -526,7 +537,7 @@ static bool ControllerEventReceived(snd_seq_event_t *ev) {
 
           // Launch 2 / Solo
           else if  ( ev->data.note.note == CTRL_BT_LAUNCH_2  ) {
-            if ( ColumnsPadMode ) {
+            if ( ControllerColumnsPadMode ) {
               CurrentSoloMode = FORCE_SM_SOLO ;
               mapVal = SoloModeButtonMap[CurrentSoloMode];
             }
@@ -535,7 +546,7 @@ static bool ControllerEventReceived(snd_seq_event_t *ev) {
 
           // Launch 3 / Mute
           else if  ( ev->data.note.note == CTRL_BT_LAUNCH_3  ) {
-            if ( ColumnsPadMode ) {
+            if ( ControllerColumnsPadMode ) {
               CurrentSoloMode = FORCE_SM_MUTE ;
               mapVal = SoloModeButtonMap[CurrentSoloMode];
             }
@@ -544,7 +555,7 @@ static bool ControllerEventReceived(snd_seq_event_t *ev) {
 
           // Launch 4 / REC ARM
           else if  ( ev->data.note.note == CTRL_BT_LAUNCH_4  ) {
-            if ( ColumnsPadMode ) {
+            if ( ControllerColumnsPadMode ) {
               CurrentSoloMode = FORCE_SM_REC_ARM ;
               mapVal = SoloModeButtonMap[CurrentSoloMode];
             }
@@ -553,22 +564,22 @@ static bool ControllerEventReceived(snd_seq_event_t *ev) {
 
           // Launch 5 (Select) / Knobs select
           else if  ( ev->data.note.note == CTRL_BT_LAUNCH_5  ) {
-            mapVal = ColumnsPadMode ? FORCE_BT_KNOBS : FORCE_BT_LAUNCH_5;
+            mapVal = ControllerColumnsPadMode ? FORCE_BT_KNOBS : FORCE_BT_LAUNCH_5;
           }
 
           // Launch 6 (Drum) / 
           else if  ( ev->data.note.note == CTRL_BT_LAUNCH_6  ) {
-            mapVal = ColumnsPadMode ? FORCE_BT_STEP_SEQ : FORCE_BT_LAUNCH_6;
+            mapVal = ControllerColumnsPadMode ? FORCE_BT_STEP_SEQ : FORCE_BT_LAUNCH_6;
           }
 
           // Launch 7 (Note) / 
           else if  ( ev->data.note.note == CTRL_BT_LAUNCH_7  ) {
-            mapVal = ColumnsPadMode ? FORCE_BT_NOTE : FORCE_BT_LAUNCH_7;
+            mapVal = ControllerColumnsPadMode ? FORCE_BT_NOTE : FORCE_BT_LAUNCH_7;
           }
 
           // Launch 8 (stop all) / 
           else if  ( ev->data.note.note == CTRL_BT_LAUNCH_8  ) {
-            mapVal = ColumnsPadMode ? FORCE_BT_STOP_ALL : FORCE_BT_LAUNCH_8;
+            mapVal = ControllerColumnsPadMode ? FORCE_BT_STOP_ALL : FORCE_BT_LAUNCH_8;
           }
 
           if ( mapVal >= 0 ) {
@@ -597,7 +608,7 @@ static bool ControllerEventReceived(snd_seq_event_t *ev) {
           if ( APCCurrentPadMode == APCM_PAD_MOD_OFF ) {
 
               SetMidiEventDestination(ev,TO_MPC_PRIVATE );
-              if ( ColumnsPadMode ) {
+              if ( ControllerColumnsPadMode ) {
 
                   if ( ev->type == SND_SEQ_EVENT_KEYPRESS ) return false;
 

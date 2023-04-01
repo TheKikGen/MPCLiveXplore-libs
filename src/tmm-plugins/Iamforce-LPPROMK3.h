@@ -110,7 +110,9 @@ show columns pads permanenently.
 
 //#define LP_DEVICE_ID 0x0D // Launchpad Mini MK3
 //#define LP_DEVICE_ID 0x0C // Launchpad X
-#define LP_DEVICE_ID 0x0E // Launchpad Pro Mk3
+
+ // Launchpad Pro Mk3
+#define LP_DEVICE_ID 0x0E
 
 #define LP_SYSEX_HEADER 0xF0,0x00,0x20,0x29,0x02, LP_DEVICE_ID
 
@@ -162,10 +164,9 @@ show columns pads permanenently.
 
 
 // SYSEX for Launchpad pro Mk3
- LP_SYSEX_HEADER 0xF0,0x00,0x20,0x29,0x02, LP_DEVICE_ID
 
 const uint8_t SX_DEVICE_INQUIRY[] = { 0xF0, 0x7E, 0x7F, 0x06, 0x01, 0xF7 };
-const uint8_t SX_LPMK3_INQUIRY_REPLY_APP[] = { 0xF0, 0x7E, 0x00, 0x06, 0x02, 0x00, 0x20, 0x29, 0x13, 0x01, 0x00, 0x00 } ;
+
 const uint8_t SX_LPMK3_PGM_MODE[]  = { LP_SYSEX_HEADER, 0x0E, 0x01, 0xF7 } ;
 const uint8_t SX_LPMK3_DAW_MODE[]  = { LP_SYSEX_HEADER, 0x10, 0x01, 0xF7 } ;
 const uint8_t SX_LPMK3_STDL_MODE[] = { LP_SYSEX_HEADER, 0x10, 0x00, 0xF7 } ;
@@ -460,8 +461,8 @@ static bool ControllerEventReceived(snd_seq_event_t *ev) {
           if ( CtrlShiftMode )           mapVal = FORCE_BT_LAUNCH_8;
           else {
 
-            ColumnsPadMode = ( ev->data.control.value == 0x7F ) || ColumnsPadModeLocked ;
-            ControllerRefreshColumnsPads(ColumnsPadMode);
+            ControllerColumnsPadMode = ( ev->data.control.value == 0x7F ) || ControllerColumnsPadModeLocked ;
+            ControllerRefreshColumnsPads(ControllerColumnsPadMode);
             return false;
           }
         }
@@ -489,9 +490,9 @@ static bool ControllerEventReceived(snd_seq_event_t *ev) {
         }
 
         else if  ( ev->data.control.param == CTRL_BT_LAUNCH_4 ) { // >
-          if ( ColumnsPadMode  ) {
+          if ( ControllerColumnsPadMode  ) {
             // Lock Columns pads mode
-            if ( ev->data.control.value !=0 )  ColumnsPadModeLocked = ! ColumnsPadModeLocked;
+            if ( ev->data.control.value !=0 )  ControllerColumnsPadModeLocked = ! ControllerColumnsPadModeLocked;
             return false;
           }
           mapVal = FORCE_BT_LAUNCH_4 ;
@@ -500,18 +501,18 @@ static bool ControllerEventReceived(snd_seq_event_t *ev) {
         else if  ( ev->data.control.param == CTRL_BT_LAUNCH_5 ) { // >
           // Launch 5 generates a FORCE SHIFT FOR columns options setting
           // in columns pads mode
-          mapVal = ColumnsPadMode ? FORCE_BT_SHIFT : FORCE_BT_LAUNCH_5 ;
+          mapVal = ControllerColumnsPadMode ? FORCE_BT_SHIFT : FORCE_BT_LAUNCH_5 ;
         }
 
         else if  ( ev->data.control.param == CTRL_BT_LAUNCH_6 ) { // >
           // Launch 6 generates a STOP ALL in columns pads mode
-          mapVal = ColumnsPadMode ? FORCE_BT_STOP_ALL : FORCE_BT_LAUNCH_6 ;
+          mapVal = ControllerColumnsPadMode ? FORCE_BT_STOP_ALL : FORCE_BT_LAUNCH_6 ;
         }
 
         else if  ( ev->data.control.param == CTRL_BT_LAUNCH_7 ) { // >
 
           // Laucnh 7 is used to change column pads mode in columns pads mode
-          if ( ColumnsPadMode ) {
+          if ( ControllerColumnsPadMode ) {
             if ( ev->data.control.value != 0 ) {
               if ( ++CurrentSoloMode >= FORCE_SM_END ) CurrentSoloMode = 0;
             }
@@ -555,7 +556,7 @@ static bool ControllerEventReceived(snd_seq_event_t *ev) {
         ev->data.note.note = ControllerGetForcePadNote(ev->data.note.note);
         SetMidiEventDestination(ev,TO_MPC_PRIVATE );
         // If controller column mode, simulate the columns and mutes pads
-        if ( ColumnsPadMode) {
+        if ( ControllerColumnsPadMode) {
 
             if ( ev->type == SND_SEQ_EVENT_KEYPRESS ) return false;
 

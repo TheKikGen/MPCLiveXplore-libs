@@ -142,8 +142,8 @@ static bool  MPCNavigationPadMode = false;
 static bool CtrlShiftMode = false;
 
 // Column pads Mode
-static bool ColumnsPadMode = false;
-static bool ColumnsPadModeLocked = false;
+static bool ControllerColumnsPadMode = false;
+static bool ControllerColumnsPadModeLocked = false;
 
 // Current Solo Mode
 static int CurrentSoloMode = FORCE_SM_SOLO;
@@ -195,6 +195,9 @@ static int MPCGetForcePadIndex(uint8_t padM) ;
 #elif defined _LPX_
    #warning IamForce driver id : LPX
    #include "Iamforce-LPX.h"
+#elif defined _LPPROMK3_
+   #warning IamForce driver id : LPPROMK3
+   #include "Iamforce-LPPROMK3.h"
 #elif defined _KIKPADMK3_
    #warning IamForce driver id : KIKPADMK3
    #include "Iamforce-KIKPADMK3.h"
@@ -674,7 +677,7 @@ bool MidiMapper( uint8_t sender, snd_seq_event_t *ev, uint8_t *buffer, size_t si
        orig_snd_rawmidi_write(raw_outpub,buffer,size);
 
        // Refresh special modes
-       if ( ColumnsPadMode) ControllerRefreshColumnsPads(true);
+       if ( ControllerColumnsPadMode) ControllerRefreshColumnsPads(true);
        if ( MPCColumnsPadMode) MPCRefreshColumnsPads(true);
        if ( MPCNavigationPadMode) MPCRefreshNavigationPads(true);
        
