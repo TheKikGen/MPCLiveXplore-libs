@@ -7,7 +7,9 @@ __ __| |           |  /_) |     ___|             |           |
 TKGL_MIDIMAPPER  custom mapping library .
 This is a custom midi mapping library for TKGL_MIDIMAPPER LD_PRELOAD library
 
-DEMO PLUGIN
+--------------------------------------------------------------------------
+MIDIMAPPER DEMO PLUGIN
+----------------------------------------------------------------------------
 
 -----------------------------------------------------------------------------
 
@@ -58,7 +60,7 @@ DEMO PLUGIN
 // The MidiMapperStart() function is called before branching to MPC entry point
 // -----------------------------------------------------------------------------
 void MidiMapperStart() {
-  tklog_info("Welcome to the MPC Midimapper demo by the Kikgen Labs\n");
+  tklog_info("Welcome to the MPC Midimapper by the Kikgen Labs\n");
 
 }
 
@@ -66,7 +68,7 @@ void MidiMapperStart() {
 // The MidiMapperSetup() function is called when all ports havebeen initialized
 // -----------------------------------------------------------------------------
 void MidiMapperSetup() {
-
+  tklog_info("Hello world !\n");
 }
 
 // -----------------------------------------------------------------------------
