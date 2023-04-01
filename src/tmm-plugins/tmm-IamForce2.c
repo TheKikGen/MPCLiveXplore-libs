@@ -198,6 +198,9 @@ static int MPCGetForcePadIndex(uint8_t padM) ;
 #elif defined _LPPROMK3_
    #warning IamForce driver id : LPPROMK3
    #include "Iamforce-LPPROMK3.h"
+#elif defined _LPMK2_
+   #warning IamForce driver id : LPMK2
+   #include "Iamforce-LPMK2.h"
 #elif defined _KIKPADMK3_
    #warning IamForce driver id : KIKPADMK3
    #include "Iamforce-KIKPADMK3.h"
