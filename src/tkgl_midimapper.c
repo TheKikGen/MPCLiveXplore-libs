@@ -229,7 +229,7 @@ int GetSeqClientPortName(int clientId, int portId, char cli_name[], char port_na
 
 	snd_seq_t *seq;
 	if (snd_seq_open(&seq, "default", SND_SEQ_OPEN_DUPLEX, 0) < 0) {
-		tklog_error("Impossible to open default seq (GetSeqClientFromPortName).\n");
+		tklog_error("Impossible to open default seq (GetSeqClientFromRegEx).\n");
 		return -1;
 	}
 
@@ -266,7 +266,9 @@ int GetSeqClientPortName(int clientId, int portId, char cli_name[], char port_na
 // Get an ALSA sequencer client , port and alsa card  from a regexp pattern
 ///////////////////////////////////////////////////////////////////////////////
 // Will return 0 if found,.  if trueName or card or port are NULL, they are ignored.
-int GetSeqClientFromPortName(const char * pattern, char trueName[], int *card, int *clientId, int *portId) {
+// The searched string is  seq client name + " " + port name, to allow more distinct result
+
+int GetSeqClientFromRegEx(const char * pattern, char trueName[], int *card, int *clientId, int *portId) {
 
 	if ( pattern == NULL) return -1;
 	char port_name[128];
@@ -275,7 +277,7 @@ int GetSeqClientFromPortName(const char * pattern, char trueName[], int *card, i
 
 	snd_seq_t *seq;
 	if (snd_seq_open(&seq, "default", SND_SEQ_OPEN_DUPLEX, 0) < 0) {
-		tklog_error("Impossible to open default seq (GetSeqClientFromPortName).\n");
+		tklog_error("Impossible to open default seq (GetSeqClientFromRegEx).\n");
 		return -1;
 	}
 
@@ -292,7 +294,7 @@ int GetSeqClientFromPortName(const char * pattern, char trueName[], int *card, i
     while (snd_seq_query_next_port(seq, pinfo) >= 0) {
 			sprintf(port_name,"%s %s",snd_seq_client_info_get_name(cinfo),snd_seq_port_info_get_name(pinfo));
       if (match(port_name,pattern) ) {
-        //printf("Port scan MATCH  %s\n",port_name);
+        tklog_debug("Port scan MATCH  %s\n",port_name);
         if ( card != NULL ) {
           c = GetCardFromShortName(snd_seq_client_info_get_name(cinfo));
           if ( c < 0 ) break;
@@ -975,7 +977,7 @@ static void tkgl_init()
   }
 
   // Retrieve MPC midi card info
-  if ( GetSeqClientFromPortName(CTRL_MPC_ALL_PRIVATE,NULL,&TkRouter.MpcHW.card,&TkRouter.MpcHW.cli,&TkRouter.MpcHW.portPriv) < 0 ) {
+  if ( GetSeqClientFromRegEx(CTRL_MPC_ALL_PRIVATE,NULL,&TkRouter.MpcHW.card,&TkRouter.MpcHW.cli,&TkRouter.MpcHW.portPriv) < 0 ) {
     tklog_fatal("Error : MPC controller card/seq client not found (regex pattern is '%s')\n",CTRL_MPC_ALL_PRIVATE);
     exit(1);
   }
@@ -1069,7 +1071,7 @@ static void tkgl_init()
   // Retrieve external controller name card info
   if ( ctrl_cli_name[0] != 0 ) {
 
-    if ( GetSeqClientFromPortName(ctrl_cli_name,0,&TkRouter.Ctrl.card,&TkRouter.Ctrl.cli, 0 ) < 0 ) {
+    if ( GetSeqClientFromRegEx(ctrl_cli_name,0,&TkRouter.Ctrl.card,&TkRouter.Ctrl.cli, 0 ) < 0 ) {
       tklog_error("Error : External controller card/seq client not found (regex pattern is '%s') , and will be ignored.\n",ctrl_cli_name);
       TkRouter.Ctrl.card = TkRouter.Ctrl.cli = TkRouter.Ctrl.port = -1;
     }
@@ -1158,6 +1160,7 @@ int __libc_start_main(
       return r;
 
     }
+
     // Banner
     fprintf(stdout,"\n%s",TKGL_LOGO);
     tklog_info("---------------------------------------------------------\n");

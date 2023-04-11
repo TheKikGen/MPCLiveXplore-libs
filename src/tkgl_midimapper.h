@@ -58,7 +58,7 @@ __ __| |           |  /_) |     ___|             |           |\n\
 
 #define TKROUTER_SEQ_POOL_OUT_SIZE 512
 
-#define CTRL_MPC_ALL_PRIVATE "(MPC|Akai Pro Force).*Private$"
+#define CTRL_MPC_ALL_PRIVATE "(MPC|Akai Pro Force|Force 6).*Privat.*$"
 
 #define PRODUCT_CODE_PATH "/sys/firmware/devicetree/base/inmusic,product-code"
 #define PRODUCT_COMPATIBLE_PATH "/sys/firmware/devicetree/base/compatible"
@@ -79,7 +79,7 @@ __ __| |           |  /_) |     ___|             |           |\n\
 
 // Colors R G B (nb . max r g b value is 7f / 7 bits  due to midi)
 
-// Standard Foce Colors
+// Standard Force Colors
 #define COLOR_FIRE       0x7F1919
 #define COLOR_ORANGE     0x7F3F19
 #define COLOR_TANGERINE  0x7F3419
@@ -203,16 +203,16 @@ __ __| |           |  /_) |     ___|             |           |\n\
 #define MPC_BT_BANK_D 38
 #define MPC_BT_FULL_LEVEL 39
 #define MPC_BT_16_LEVEL 40
-#define MPC_BT_TRACK MUTE 43
+#define MPC_BT_TRACK_MUTE 43
 #define MPC_BT_NEXT_SEQ 42
 #define MPC_BT_PROG_EDIT 02
-#define MPC_BT_SAMPLE EDIT 06
+#define MPC_BT_SAMPLE_EDIT 06
 #define MPC_BT_PAD_MIXER 115
 #define MPC_BT_CHANNEL_MIXER 116
 #define MPC_BT_PROJECT 59
 #define MPC_BT_PROGRAM 60
 #define MPC_BT_PAD_SCENE 61
-#define MPC_BT_PAD PARAM 62
+#define MPC_BT_PAD_PARAM 62
 #define MPC_BT_SCREEN_CONTROL 63
 #define MPC_BT_MENU 123
 #define MPC_BT_BROWSE 50
