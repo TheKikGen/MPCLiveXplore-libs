@@ -212,7 +212,7 @@ static uint8_t ControllerGetLaunchLedValue(uint8_t ledF) {
 
 // Force led : 
 // 0 : Off  1-0x7F : Fixed on   2 : Blink
-tklog_debug("LEDF IN = %d\n",ledF);
+//tklog_debug("LEDF IN = %d\n",ledF);
 
   switch (ledF)
   {
@@ -226,7 +226,7 @@ tklog_debug("LEDF IN = %d\n",ledF);
       ledF = 1;    
       break;
   }
-tklog_debug("LEDF OUT = %d\n",ledF);
+//tklog_debug("LEDF OUT = %d\n",ledF);
   return ledF;
 }
 
@@ -522,7 +522,7 @@ static bool ControllerEventReceived(snd_seq_event_t *ev) {
 
           // Right / Step Seq - Column mode : Assign B
           else if  ( ev->data.note.note == CTRL_BT_TRACK_4  ) {
-            mapVal = ControllerColumnsPadMode ? FORCE_BT_ASSIGN_B : ( mapVal == CtrlShiftMode ? FORCE_BT_RIGHT :FORCE_BT_STEP_SEQ );
+            mapVal = ControllerColumnsPadMode ? FORCE_BT_ASSIGN_B : ( CtrlShiftMode ? FORCE_BT_RIGHT :FORCE_BT_STEP_SEQ );
           }
 
           // Volume / Mixer / Master
@@ -557,46 +557,58 @@ static bool ControllerEventReceived(snd_seq_event_t *ev) {
 
  
 
-          // Launch 5 (Select) / STOP ALL In COLUMN MODE / Shift = Knobs select
+          // Launch 5 (Select) / STOP ALL In COLUMN MODE /CTRLSHIFT IN COLUMN MODE = LAUNCH / Shift = Knobs select
           else if  ( ev->data.note.note == CTRL_BT_LAUNCH_5  ) {
-            if ( CtrlShiftMode) mapVal = FORCE_BT_KNOBS ;
-            else mapVal = ControllerColumnsPadMode ? FORCE_BT_STOP_ALL : ControllerGetForceLaunchBt(ev->data.note.note);
+            if ( ControllerColumnsPadMode ) {
+                mapVal = CtrlShiftMode ? ControllerGetForceLaunchBt(ev->data.note.note) : FORCE_BT_STOP_ALL ;
+            }
+            else {
+                mapVal = CtrlShiftMode ? FORCE_BT_KNOBS : ControllerGetForceLaunchBt(ev->data.note.note)  ;
+            }
           }
 
-          // Launch 4 / REC ARM
+          // Launch 4 / REC ARM - SHIFT IN COLUMN MODE = LAUNCH
           else if  ( ev->data.note.note == CTRL_BT_LAUNCH_4  ) {
-            if ( ControllerColumnsPadMode ) {
-              CurrentSoloMode = FORCE_SM_REC_ARM ;
-              mapVal = SoloModeButtonMap[CurrentSoloMode];
+            if ( ( ControllerColumnsPadMode && CtrlShiftMode ) || ! ControllerColumnsPadMode ) {
+                mapVal = ControllerGetForceLaunchBt(ev->data.note.note) ;
             }
-            else  mapVal = ControllerGetForceLaunchBt(ev->data.note.note) ;
+            else if ( ControllerColumnsPadMode ) {
+                CurrentSoloMode = FORCE_SM_REC_ARM ;
+                mapVal = SoloModeButtonMap[CurrentSoloMode];
+            } 
           }
 
           // Launch 3 / Mute
           else if  ( ev->data.note.note == CTRL_BT_LAUNCH_3  ) {
-            if ( ControllerColumnsPadMode ) {
+            if ( ( ControllerColumnsPadMode && CtrlShiftMode ) || ! ControllerColumnsPadMode ) {
+                mapVal = ControllerGetForceLaunchBt(ev->data.note.note) ;
+            }
+            else if ( ControllerColumnsPadMode ) {
               CurrentSoloMode = FORCE_SM_MUTE ;
               mapVal = SoloModeButtonMap[CurrentSoloMode];
-            }
-            else  mapVal = ControllerGetForceLaunchBt(ev->data.note.note) ;
+            } 
           }
 
           // Launch 2 / Solo
           else if  ( ev->data.note.note == CTRL_BT_LAUNCH_2  ) {
-            if ( ControllerColumnsPadMode ) {
+            if ( ( ControllerColumnsPadMode && CtrlShiftMode ) || ! ControllerColumnsPadMode ) {
+                mapVal = ControllerGetForceLaunchBt(ev->data.note.note) ;
+            }
+            else if ( ControllerColumnsPadMode ) {
               CurrentSoloMode = FORCE_SM_SOLO ;
               mapVal = SoloModeButtonMap[CurrentSoloMode];
-            }
-            else  mapVal = ControllerGetForceLaunchBt(ev->data.note.note) ;
+            } 
           }
 
           // Launch 1 / Clip Stop
           else if  ( ev->data.note.note == CTRL_BT_LAUNCH_1  ) {
-            if ( ControllerColumnsPadMode ) {
+            if ( ( ControllerColumnsPadMode && CtrlShiftMode ) || ! ControllerColumnsPadMode ) {
+                mapVal = ControllerGetForceLaunchBt(ev->data.note.note) ;
+            }
+            else if ( ControllerColumnsPadMode ) {
               CurrentSoloMode = FORCE_SM_CLIP_STOP ;
               mapVal = SoloModeButtonMap[CurrentSoloMode];
-            }
-            else  mapVal = ControllerGetForceLaunchBt(ev->data.note.note) ;
+            } 
           }
 
           if ( mapVal >= 0 ) {
