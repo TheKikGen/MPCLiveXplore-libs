@@ -161,6 +161,31 @@ static int CurrentMatrixVOffset=0;
 // Quadran for external controller (none by default)
 static int CtrlPadQuadran = 0;
 
+// MPC Pads note mapping table. Numbering is totally anarchic
+// MPC Pad start at bottom left to top right
+//
+// wtf !!
+// (13)31 (14)37 (15)33 (16)35
+// (9) 30 (10)2F (11)2D (12)2B
+// (5) 28 (6) 26 (7) 2E (8) 2C
+// (1) 25 (2) 24 (3) 2A (4) 52
+// OxFF = no value
+
+static const uint8_t MPC_PadNoteMapToIndex[]
+= { 
+  1, 0, 5, 0xff, 4, 0xff, 2, 11,
+//    0x24,       0x25,     0x26,    (0x27),   0x28,   (0x29),    0x2A,     0x2B,
+    7, 10, 6, 9, 8, 12, 0xff,  14,
+//    0x2C,       0x2D,     0x2E,     0x2F,     0x30,      0x31,   (0x32)   0x33,
+  0xff,  15, 0xff, 13,
+// (0x34), 0x35,    (0x36)   0x37,
+0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff, 0xff,0xff,0xff,
+0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff, 0xff,0xff,0xff,
+// 0x38 - 0x51 : nothing
+3 
+// 0x52
+};
+
 
 // Function prototypes ---------------------------------------------------------
 
@@ -238,47 +263,14 @@ static int ForceGetMPCPadIndex(uint8_t padF) {
 // Get MPC pad # index from MPC pad note
 ///////////////////////////////////////////////////////////////////////////////
 static int MPCGetPadIndexFromNote(uint8_t MPCPadNote) {
-
-  // MPC Pads numbering is totally anarchic
-  // So it is preferable to use a switch case rather than a mapping table in an array.
-  // MPC Pad start at bottom left to top right
-
-  int mapVal = -1;
-
-  switch (MPCPadNote) {
-    case MPC_PAD_1: mapVal = 0 ; break;
-    case MPC_PAD_2: mapVal = 1 ; break;
-    case MPC_PAD_3: mapVal = 2 ; break;
-    case MPC_PAD_4: mapVal = 3 ; break;
-    case MPC_PAD_5: mapVal = 4 ; break;
-    case MPC_PAD_6: mapVal = 5 ; break;
-    case MPC_PAD_7: mapVal = 6 ; break;
-    case MPC_PAD_8: mapVal = 7 ; break;
-    case MPC_PAD_9: mapVal = 8  ; break;
-    case MPC_PAD_10: mapVal = 9 ; break;
-    case MPC_PAD_11: mapVal = 10 ; break;
-    case MPC_PAD_12: mapVal = 11 ; break;
-    case MPC_PAD_13: mapVal = 12 ;  break;
-    case MPC_PAD_14: mapVal = 13 ;  break;
-    case MPC_PAD_15: mapVal = 14;  break;
-    case MPC_PAD_16: mapVal = 15 ;  break;
-  }
-
-  return mapVal;
-
+  uint8_t mapVal = MPC_PadNoteMapToIndex[MPCPadNote - 0x24 ] ;
+  return mapVal == 0xFF ? -1:mapVal;
 }
-
 
 ///////////////////////////////////////////////////////////////////////////////
 // Get Force pad # note from MPC pad note
 ///////////////////////////////////////////////////////////////////////////////
 static uint8_t MPCGetForcePadNote(uint8_t MPCPadNote) {
-
-  // MPC Pads numbering is totally anarchic
-  // So it is preferable to use a switch case rather than a mapping table in an array.
-  // Forces pads are numbered from top left to bottom right (starting 0)
-  // MPC Pad start at bottom left to top right
-  // We add the the Quadran offtet to place the 8x8 MPC pads in the Force 8x8 matrix
 
   int mapVal = MPCGetPadIndexFromNote(MPCPadNote);
 
@@ -479,7 +471,7 @@ static void MPCSetMapButton(snd_seq_event_t *ev) {
           if ( ev->data.note.velocity == 0x7F ) {
             if ( ++CurrentSoloMode == FORCE_SM_END ) CurrentSoloMode = 0 ;
             SendDeviceKeyPress(FORCE_BT_MUTE + CurrentSoloMode);
-            tklog_debug("CurrentMode %d \n",CurrentSoloMode);
+            //tklog_debug("CurrentMode %d \n",CurrentSoloMode);
           }
       }
       else {
