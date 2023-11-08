@@ -7,7 +7,7 @@ __ __| |           |  /_) |     ___|             |           |
 TKGL_MIDIMAPPER  custom mapping library .
 This is a custom midi mapping library for TKGL_MIDIMAPPER LD_PRELOAD library
 
-IMAFORCE PLUGIN -- Force Emulation on MPC
+IAMFORCE PLUGIN -- Force Emulation on MPC
 
 -----------------------------------------------------------------------------
 
