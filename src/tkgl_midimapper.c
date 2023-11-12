@@ -206,14 +206,35 @@ int match(const char *string, const char *pattern)
 ///////////////////////////////////////////////////////////////////////////////
 int GetCardFromShortName(const char *pattern) {
    int card = -1;
+   int device = -1;
+   snd_ctl_t *ctl;
+   char name[32];
    char* shortname = NULL;
 
    if ( snd_card_next(&card) < 0) return -1;
    while (card >= 0) {
-   	  if ( snd_card_get_name(card, &shortname) == 0  ) {
-       if (match(shortname,pattern) ) return card;
-     }
-   	 if ( snd_card_next(&card) < 0) break;
+   	if ( snd_card_get_name(card, &shortname) == 0  ) {
+      tklog_debug("Card #%d found (%s)\n",card,shortname);
+      if (match(shortname,pattern) ) {
+          tklog_debug("Card %s matching pattern %s\n",shortname,pattern);
+	        sprintf(name, "hw:%d",  card);
+	        if ( snd_ctl_open(&ctl, name, 0) < 0) {
+            tklog_error("Impossible to open control for card %d - %s (GetCardFromShortName).\n",card,shortname);
+		        return -1 ;
+          }
+          device = -1 ;
+    		  if ( snd_ctl_rawmidi_next_device(ctl, &device) == 0 ) {
+                if ( device >= 0 ) {
+                  tklog_debug("Card #%d is a midi device\n",card);
+                  snd_ctl_close(ctl) ;                 
+                  return card;
+                }
+		      }
+          snd_ctl_close(ctl) ;                 
+	    }
+      free(shortname);
+    }
+   	if ( snd_card_next(&card) < 0) break;
    }
 
    return -1;
