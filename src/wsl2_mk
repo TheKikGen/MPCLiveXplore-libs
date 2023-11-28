@@ -12,7 +12,7 @@
 mkdir -p ../bin
 
 for n in LPMK3 LPMK2 APCKEY25MK2 APCMINIMK2 KIKPADMK3 LPPROMK3 LPX NONE ; do
-  for m in '' LIVE2 ; do
+  for m in '' LIVE2 ONE ; do
     if [ -z "$m" ]
     then
          arm-linux-gnueabihf-gcc  ./tmm-plugins/tmm-IamForce2.c -o ../bin/tmm-IamForce-${n}.so -shared -fPIC -I/usr/include/alsa -I./ -ldl -D_${n}_ 
