@@ -258,7 +258,7 @@ static int ControllerInitialize() {
   SeqSendRawMidi( TO_CTRL_EXT,  SX_LPMK3_DAW_CLEAR, sizeof(SX_LPMK3_DAW_CLEAR) );
   SeqSendRawMidi( TO_CTRL_EXT,  SX_LPMK3_PGM_MODE, sizeof(SX_LPMK3_PGM_MODE) );
 
-  ControllerScrollText("IamForce",0,21,COLOR_SEA);
+  ControllerScrollText("**IamForce**",0,12,COLOR_SEA);
 
   uint8_t midiMsg[] = {
     0x92, CTRL_BT_UP, CTRL_COLOR_BLUE,

@@ -195,6 +195,7 @@ __ __| |           |  /_) |     ___|             |           |\n\
 #define FORCE_BT_CLIP_STOP 94
 
 // MPC Buttons
+#define MPC_BT_TC 0x7D
 #define MPC_BT_QLINK_SELECT 0
 #define MPC_BT_ENCODER 0x6F
 #define MPC_BT_BANK_A 35

@@ -201,9 +201,75 @@ static void MPCRefresCurrentQuadran() ;
 static int MPCGetPadIndexFromNote(uint8_t MPCPadNote) ;
 static int MPCGetForcePadIndex(uint8_t padM) ;
 
+static int getForceMappingValue(uint8_t mpcValue);
+static int getMpcMappingValue(uint8_t forveValue);
 
 // Midi controller specific ----------------------------------------------------
 // Include here your own controller implementation
+
+#define _LIVE2_
+
+typedef struct mapping {
+    int force;
+    int mpc;
+}mapping;
+
+static mapping buttonmapping[] = {
+    {FORCE_BT_ENCODER , MPC_BT_ENCODER},
+    {FORCE_BT_SHIFT, MPC_BT_SHIFT},
+    {FORCE_BT_PLAY, MPC_BT_PLAY},
+    {FORCE_BT_REC, MPC_BT_REC},
+    {FORCE_BT_MATRIX, MPC_BT_MAIN},
+    {FORCE_BT_LAUNCH, MPC_BT_PLAY_START},
+    {FORCE_BT_TAP_TEMPO, MPC_BT_TAP_TEMPO},
+    {FORCE_BT_EDIT, MPC_BT_ERASE},
+    {FORCE_BT_UNDO, MPC_BT_UNDO},
+    {FORCE_BT_NOTE, MPC_BT_16_LEVEL},
+    {FORCE_BT_COPY, MPC_BT_COPY},
+    {FORCE_BT_MENU, MPC_BT_MENU},
+
+#if defined _LIVE2_  
+#warning MPC Model MPC LIVE II
+    {FORCE_BT_LOAD, MPC_BT_NOTE_REPEAT},
+    {FORCE_BT_MIXER, MPC_BT_CHANNEL_MIXER},
+    {FORCE_BT_SAVE, MPC_BT_FULL_LEVEL},
+    {FORCE_BT_NAVIGATE, MPC_BT_NEXT_SEQ},
+    {FORCE_BT_ARP, MPC_BT_TC},
+    {FORCE_BT_STEP_SEQ, MPC_BT_STEP_SEQ},
+    {FORCE_BT_CLIP, MPC_BT_MUTE},
+    {FORCE_BT_LOAD, MPC_BT_MENU},
+    {FORCE_BT_STOP, MPC_BT_STOP},
+    {FORCE_BT_STOP_ALL, MPC_BT_OVERDUB},
+    {FORCE_BT_KNOBS, MPC_BT_QLINK_SELECT},
+#else
+    {FORCE_BT_ARP, MPC_BT_NOTE_REPEAT},
+    {FORCE_BT_MIXER, MPC_BT_FULL_LEVEL},
+    {FORCE_BT_SAVE, MPC_BT_OVERDUB},
+    {FORCE_BT_ASSIGN_A, MPC_BT_BANK_A},
+    {FORCE_BT_ASSIGN_B,MPC_BT_BANK_B},
+    {FORCE_BT_STEP_SEQ,MPC_BT_BANK_C},
+    {FORCE_BT_CLIP,MPC_BT_BANK_D},
+#endif
+};
+
+static int getForceMappingValue(uint8_t mpcValue) {
+    size_t size = sizeof(buttonmapping) / sizeof(buttonmapping[0]);
+    for (int i = 0; i < size; i++) {
+        if (buttonmapping[i].mpc == mpcValue) {
+            return buttonmapping[i].force;
+        }
+    }
+    return -1;
+}
+static int getMpcMappingValue(uint8_t forveValue) {
+    size_t size = sizeof(buttonmapping) / sizeof(buttonmapping[0]);
+    for (int i = 0; i < size; i++) {
+        if (buttonmapping[i].force == forveValue) {
+            return buttonmapping[i].mpc;
+        }
+    }
+    return -1;
+}
 
 // To compile define one of the following preprocesseur variables :
 // NONE is the default.
@@ -301,28 +367,29 @@ static void MPCSetMapButtonLed(snd_seq_event_t *ev) {
 
   int mapVal = -1 ;
 
-  if      ( ev->data.control.param == FORCE_BT_SHIFT )      mapVal = MPC_BT_SHIFT ;
-  else if ( ev->data.control.param == FORCE_BT_PLAY )       mapVal = MPC_BT_PLAY;
-  else if ( ev->data.control.param == FORCE_BT_REC )        mapVal = MPC_BT_REC;
-  else if ( ev->data.control.param == FORCE_BT_MATRIX )     mapVal = MPC_BT_MAIN;
-  else if ( ev->data.control.param == FORCE_BT_LAUNCH )     mapVal = MPC_BT_PLAY_START;
-  else if ( ev->data.control.param == FORCE_BT_ARP )        mapVal = MPC_BT_NOTE_REPEAT;
-  else if ( ev->data.control.param == FORCE_BT_MIXER )      mapVal = MPC_BT_FULL_LEVEL;
-  else if ( ev->data.control.param == FORCE_BT_TAP_TEMPO )  mapVal = MPC_BT_TAP_TEMPO;
-  else if ( ev->data.control.param == FORCE_BT_UNDO )       mapVal = MPC_BT_UNDO;
-  else if ( ev->data.control.param == FORCE_BT_SAVE )       mapVal = MPC_BT_OVERDUB;
-  else if ( ev->data.control.param == FORCE_BT_COPY )       mapVal = MPC_BT_COPY;
-  else if ( ev->data.control.param == FORCE_BT_DELETE )     mapVal = MPC_BT_COPY;
-  else if ( ev->data.control.param == FORCE_BT_ASSIGN_A )   mapVal = MPC_BT_BANK_A;
-  else if ( ev->data.control.param == FORCE_BT_ASSIGN_B )   mapVal = MPC_BT_BANK_B;
-  else if ( ev->data.control.param == FORCE_BT_NOTE )       mapVal = MPC_BT_16_LEVEL;
-  else if ( ev->data.control.param == FORCE_BT_STEP_SEQ )   mapVal = MPC_BT_BANK_C;
-  else if ( ev->data.control.param == FORCE_BT_CLIP )       mapVal = MPC_BT_BANK_D;
-  else if ( ev->data.control.param == FORCE_BT_MENU )       mapVal = MPC_BT_MENU ;
-  else if ( ev->data.control.param == FORCE_BT_LOAD )       mapVal = MPC_BT_MENU;
-  else if ( ev->data.control.param == FORCE_BT_STOP )       mapVal = MPC_BT_STOP;
-  else if ( ev->data.control.param == FORCE_BT_STOP_ALL )   mapVal = MPC_BT_STOP;
-  else if ( ev->data.control.param == FORCE_BT_KNOBS )      mapVal = MPC_BT_QLINK_SELECT;
+  int mpcValue = getMpcMappingValue(ev->data.control.param);
+  if (mpcValue >= 0) {
+      mapVal = mpcValue;
+  }
+  // test if i can switch on button leds
+  else if (ev->data.control.param == FORCE_BT_ASSIGN_A) {
+      ev->data.control.param = MPC_BT_BANK_A;
+      SendMidiEvent(ev);
+
+      ev->data.control.param = MPC_BT_BANK_B;
+      SendMidiEvent(ev);
+
+      ev->data.control.param = MPC_BT_BANK_C;
+      SendMidiEvent(ev);
+
+      ev->data.control.param = MPC_BT_BANK_D;
+      SendMidiEvent(ev);
+
+      ev->data.control.param = MPC_BT_TC;
+      SendMidiEvent(ev);
+
+      return;
+  }
 
   else if ( ev->data.control.param == FORCE_BT_MUTE )   {
     if ( ev->data.control.value == 3 ) {
@@ -456,6 +523,11 @@ static void MPCSetMapButton(snd_seq_event_t *ev) {
         mapVal = FORCE_BT_SHIFT ;
     }
 
+    else if (ev->data.note.note == MPC_BT_BANK_A) { MPCPadQuadran = MPC_QUADRAN_3; }
+    else if (ev->data.note.note == MPC_BT_BANK_B) { MPCPadQuadran = MPC_QUADRAN_4; }
+    else if (ev->data.note.note == MPC_BT_BANK_C) { MPCPadQuadran = MPC_QUADRAN_1; }
+    else if (ev->data.note.note == MPC_BT_BANK_D) { MPCPadQuadran = MPC_QUADRAN_2; }
+
     // SSM Mode for MPC with the PLUS key
     else if ( ev->data.note.note == MPC_BT_PLUS ) {
       MPCColumnsPadMode = ( ev->data.note.velocity == 0x7F ) ;
@@ -466,6 +538,8 @@ static void MPCSetMapButton(snd_seq_event_t *ev) {
     // Pad navigation mode with the MINUS key
     // If MINUS pressed when in MPCCOlumns pad mode : change mode
     else if ( ev->data.note.note == MPC_BT_MINUS ) {
+
+      KnobShiftMode = (ev->data.note.velocity == 0x7F);
 
       if ( MPCColumnsPadMode ) { 
           if ( ev->data.note.velocity == 0x7F ) {
@@ -481,28 +555,24 @@ static void MPCSetMapButton(snd_seq_event_t *ev) {
       }
     }
 
-    else if (  ev->data.note.note == MPC_BT_ENCODER )      mapVal = FORCE_BT_ENCODER ;
-    else if (  ev->data.note.note == MPC_BT_PLAY )         mapVal = FORCE_BT_PLAY;
-    else if (  ev->data.note.note == MPC_BT_REC )          mapVal = FORCE_BT_REC;
-    else if (  ev->data.note.note == MPC_BT_MAIN )         mapVal = FORCE_BT_MATRIX;
-    else if (  ev->data.note.note == MPC_BT_PLAY_START )   mapVal = FORCE_BT_LAUNCH ;
-    
-    else if (  ev->data.note.note == MPC_BT_NOTE_REPEAT )  mapVal = FORCE_BT_ARP;
-    else if (  ev->data.note.note == MPC_BT_FULL_LEVEL )   mapVal = FORCE_BT_MIXER;
-    else if (  ev->data.note.note == MPC_BT_16_LEVEL )     mapVal = FORCE_BT_NOTE;
-    else if (  ev->data.note.note == MPC_BT_ERASE )        mapVal = FORCE_BT_EDIT;
-    
-    else if (  ev->data.note.note == MPC_BT_TAP_TEMPO )    mapVal = FORCE_BT_TAP_TEMPO;
-    
-    else if (  ev->data.note.note == MPC_BT_UNDO )         mapVal = FORCE_BT_UNDO;
-    else if (  ev->data.note.note == MPC_BT_OVERDUB )      mapVal = FORCE_BT_SAVE;  
-   
-    else if (  ev->data.note.note == MPC_BT_BANK_A )      mapVal = FORCE_BT_ASSIGN_A;
-    else if (  ev->data.note.note == MPC_BT_BANK_B )      mapVal = FORCE_BT_ASSIGN_B;
+    else if (ev->data.note.note == MPC_BT_ENCODER)      mapVal = getForceMappingValue(ev->data.note.note);
+    else if (ev->data.note.note == MPC_BT_PLAY)         mapVal = getForceMappingValue(ev->data.note.note);
+    else if (ev->data.note.note == MPC_BT_REC)          mapVal = getForceMappingValue(ev->data.note.note);
+    else if (ev->data.note.note == MPC_BT_MAIN)         mapVal = getForceMappingValue(ev->data.note.note);
+    else if (ev->data.note.note == MPC_BT_PLAY_START)   mapVal = getForceMappingValue(ev->data.note.note);
+    else if (ev->data.note.note == MPC_BT_NOTE_REPEAT)  mapVal = getForceMappingValue(ev->data.note.note);
+    else if (ev->data.note.note == MPC_BT_CHANNEL_MIXER)mapVal = getForceMappingValue(ev->data.note.note);
+    else if (ev->data.note.note == MPC_BT_NEXT_SEQ)     mapVal = getForceMappingValue(ev->data.note.note);
+    else if (ev->data.note.note == MPC_BT_TC)           mapVal = getForceMappingValue(ev->data.note.note);
+    else if (ev->data.note.note == MPC_BT_16_LEVEL)     mapVal = getForceMappingValue(ev->data.note.note);
+    else if (ev->data.note.note == MPC_BT_ERASE)        mapVal = getForceMappingValue(ev->data.note.note);
+    else if (ev->data.note.note == MPC_BT_TAP_TEMPO)    mapVal = getForceMappingValue(ev->data.note.note);
+    else if (ev->data.note.note == MPC_BT_UNDO)         mapVal = getForceMappingValue(ev->data.note.note);
+    else if (ev->data.note.note == MPC_BT_OVERDUB)      mapVal = getForceMappingValue(ev->data.note.note);
+    else if (ev->data.note.note == MPC_BT_FULL_LEVEL)   mapVal = getForceMappingValue(ev->data.note.note);
+    else if (ev->data.note.note == MPC_BT_STEP_SEQ)     mapVal = getForceMappingValue(ev->data.note.note);
+    else if (ev->data.note.note == MPC_BT_MUTE)         mapVal = getForceMappingValue(ev->data.note.note);
 
-    else if (  ev->data.note.note == MPC_BT_BANK_C )      mapVal = FORCE_BT_STEP_SEQ;
-    else if (  ev->data.note.note == MPC_BT_BANK_D )      mapVal = FORCE_BT_CLIP;
- 
     // Knobs touch
     else if (  ev->data.note.note == MPC_BT_QLINK_SELECT ) {
 
