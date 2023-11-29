@@ -246,19 +246,6 @@ static mapping buttonmapping[] = {
     {FORCE_BT_STOP, MPC_BT_STOP},
     {FORCE_BT_STOP_ALL, MPC_BT_OVERDUB},
     {FORCE_BT_KNOBS, MPC_BT_QLINK_SELECT},
-//#elif defined _ONE_
-//    #warning MPC Model MPC ONE
-//    { FORCE_BT_LOAD, MPC_BT_NOTE_REPEAT },
-//    { FORCE_BT_MIXER, MPC_BT_CHANNEL_MIXER },
-//    { FORCE_BT_SAVE, MPC_BT_FULL_LEVEL },
-//    { FORCE_BT_NAVIGATE, MPC_BT_NEXT_SEQ },
-//    { FORCE_BT_ARP, MPC_BT_TC },
-//    { FORCE_BT_STEP_SEQ, MPC_BT_STEP_SEQ },
-//    
-//    { FORCE_BT_LOAD, MPC_BT_MENU },
-//    { FORCE_BT_STOP, MPC_BT_STOP },
-//    { FORCE_BT_STOP_ALL, MPC_BT_OVERDUB },
-//    { FORCE_BT_KNOBS, MPC_BT_QLINK_SELECT },
 
 #else
     {FORCE_BT_ARP, MPC_BT_NOTE_REPEAT},
