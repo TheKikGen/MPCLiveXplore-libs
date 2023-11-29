@@ -211,7 +211,7 @@ static mapping getForceMappingValue(uint8_t mpcValue);
 // Midi controller specific ----------------------------------------------------
 // Include here your own controller implementation
 
-#define _LIVE2_
+//#define _LIVE2_
 
 static mapping buttonmapping[] = {
     {FORCE_BT_ENCODER , MPC_BT_ENCODER},
@@ -242,7 +242,6 @@ static mapping buttonmapping[] = {
     {FORCE_BT_NAVIGATE, MPC_BT_NEXT_SEQ, FORCE_BT_CLIP },
     {FORCE_BT_ARP, MPC_BT_TC},
     {FORCE_BT_STEP_SEQ, MPC_BT_STEP_SEQ},
-    {FORCE_BT_LOAD, MPC_BT_MENU},
     {FORCE_BT_STOP, MPC_BT_STOP},
     {FORCE_BT_STOP_ALL, MPC_BT_OVERDUB},
     {FORCE_BT_KNOBS, MPC_BT_QLINK_SELECT},
@@ -271,7 +270,7 @@ static mapping getForceMappingValue(uint8_t mpcValue) {
 
 // To compile define one of the following preprocesseur variables :
 // NONE is the default.
-
+//#define _LPMK3_
 #if defined _APCKEY25MK2_
    #warning IamForce driver id : APCKEY25MK2
    #include "Iamforce-APCKEY25MK2.h"
@@ -595,7 +594,8 @@ static void MPCSetMapButton(snd_seq_event_t *ev) {
         ev->data.note.note == MPC_BT_OVERDUB ||
         ev->data.note.note == MPC_BT_FULL_LEVEL ||
         ev->data.note.note == MPC_BT_STEP_SEQ ||
-        ev->data.note.note == MPC_BT_MUTE
+        ev->data.note.note == MPC_BT_MUTE ||
+        ev->data.note.note == MPC_BT_MENU
         ) {
             mapping map = getForceMappingValue(ev->data.note.note);
             if (!ShiftMode && map.shift > 0 && ev->data.note.velocity == 0x7F) {
@@ -651,14 +651,9 @@ static void MPCSetMapButton(snd_seq_event_t *ev) {
       else KnobShiftMode = false;
     }
 
-    // Shiftmode that we must intercept
-    else if (  ev->data.note.note == MPC_BT_MENU ) {
-      shiftReleaseBefore = ShiftMode;
-      mapVal = ( ShiftMode ? FORCE_BT_LOAD : FORCE_BT_MENU ) ;
-    }
     else if (  ev->data.note.note == MPC_BT_STOP ) {
       shiftReleaseBefore = ShiftMode;
-      mapVal = ( ShiftMode ? FORCE_BT_STOP : FORCE_BT_STOP_ALL);
+      mapVal = ( ShiftMode ? FORCE_BT_STOP_ALL : FORCE_BT_STOP);
     }
     else if (  ev->data.note.note == MPC_BT_COPY ) {
       shiftReleaseBefore = ShiftMode;
