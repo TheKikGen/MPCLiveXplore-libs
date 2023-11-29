@@ -186,6 +186,12 @@ static const uint8_t MPC_PadNoteMapToIndex[]
 // 0x52
 };
 
+typedef struct mapping {
+    int force;
+    int mpc;
+    //send force button with shift when shift is NOT pressed
+    int shift;
+}mapping;
 
 // Function prototypes ---------------------------------------------------------
 
@@ -201,18 +207,11 @@ static void MPCRefresCurrentQuadran() ;
 static int MPCGetPadIndexFromNote(uint8_t MPCPadNote) ;
 static int MPCGetForcePadIndex(uint8_t padM) ;
 
-static int getForceMappingValue(uint8_t mpcValue);
-static int getMpcMappingValue(uint8_t forveValue);
-
+static mapping getForceMappingValue(uint8_t mpcValue);
 // Midi controller specific ----------------------------------------------------
 // Include here your own controller implementation
 
-//#define _LIVE2_
-
-typedef struct mapping {
-    int force;
-    int mpc;
-}mapping;
+#define _LIVE2_
 
 static mapping buttonmapping[] = {
     {FORCE_BT_ENCODER , MPC_BT_ENCODER},
@@ -228,32 +227,39 @@ static mapping buttonmapping[] = {
     {FORCE_BT_COPY, MPC_BT_COPY},
     {FORCE_BT_MENU, MPC_BT_MENU},
 
-#if defined _LIVE2_  
+#ifdef _LIVE2_
+     {FORCE_BT_CLIP, MPC_BT_MUTE},
+#endif
+#ifdef _ONE_
+     { FORCE_BT_CLIP, MPC_BT_TRACK_MUTE },
+#endif
+
+#if defined _LIVE2_ || _ONE_
 #warning MPC Model MPC LIVE II
     {FORCE_BT_LOAD, MPC_BT_NOTE_REPEAT},
     {FORCE_BT_MIXER, MPC_BT_CHANNEL_MIXER},
     {FORCE_BT_SAVE, MPC_BT_FULL_LEVEL},
-    {FORCE_BT_NAVIGATE, MPC_BT_NEXT_SEQ},
+    {FORCE_BT_NAVIGATE, MPC_BT_NEXT_SEQ, FORCE_BT_CLIP },
     {FORCE_BT_ARP, MPC_BT_TC},
     {FORCE_BT_STEP_SEQ, MPC_BT_STEP_SEQ},
-    {FORCE_BT_CLIP, MPC_BT_MUTE},
     {FORCE_BT_LOAD, MPC_BT_MENU},
     {FORCE_BT_STOP, MPC_BT_STOP},
     {FORCE_BT_STOP_ALL, MPC_BT_OVERDUB},
     {FORCE_BT_KNOBS, MPC_BT_QLINK_SELECT},
-#elif defined _ONE_
-    #warning MPC Model MPC ONE
-    { FORCE_BT_LOAD, MPC_BT_NOTE_REPEAT },
-    { FORCE_BT_MIXER, MPC_BT_CHANNEL_MIXER },
-    { FORCE_BT_SAVE, MPC_BT_FULL_LEVEL },
-    { FORCE_BT_NAVIGATE, MPC_BT_NEXT_SEQ },
-    { FORCE_BT_ARP, MPC_BT_TC },
-    { FORCE_BT_STEP_SEQ, MPC_BT_STEP_SEQ },
-    { FORCE_BT_CLIP, MPC_BT_TRACK_MUTE },
-    { FORCE_BT_LOAD, MPC_BT_MENU },
-    { FORCE_BT_STOP, MPC_BT_STOP },
-    { FORCE_BT_STOP_ALL, MPC_BT_OVERDUB },
-    { FORCE_BT_KNOBS, MPC_BT_QLINK_SELECT },
+//#elif defined _ONE_
+//    #warning MPC Model MPC ONE
+//    { FORCE_BT_LOAD, MPC_BT_NOTE_REPEAT },
+//    { FORCE_BT_MIXER, MPC_BT_CHANNEL_MIXER },
+//    { FORCE_BT_SAVE, MPC_BT_FULL_LEVEL },
+//    { FORCE_BT_NAVIGATE, MPC_BT_NEXT_SEQ },
+//    { FORCE_BT_ARP, MPC_BT_TC },
+//    { FORCE_BT_STEP_SEQ, MPC_BT_STEP_SEQ },
+//    
+//    { FORCE_BT_LOAD, MPC_BT_MENU },
+//    { FORCE_BT_STOP, MPC_BT_STOP },
+//    { FORCE_BT_STOP_ALL, MPC_BT_OVERDUB },
+//    { FORCE_BT_KNOBS, MPC_BT_QLINK_SELECT },
+
 #else
     {FORCE_BT_ARP, MPC_BT_NOTE_REPEAT},
     {FORCE_BT_MIXER, MPC_BT_FULL_LEVEL},
@@ -265,23 +271,15 @@ static mapping buttonmapping[] = {
 #endif
 };
 
-static int getForceMappingValue(uint8_t mpcValue) {
+mapping null = { -1,-1,false };
+static mapping getForceMappingValue(uint8_t mpcValue) {
     size_t size = sizeof(buttonmapping) / sizeof(buttonmapping[0]);
     for (int i = 0; i < size; i++) {
         if (buttonmapping[i].mpc == mpcValue) {
-            return buttonmapping[i].force;
+            return buttonmapping[i];
         }
     }
-    return -1;
-}
-static int getMpcMappingValue(uint8_t forveValue) {
-    size_t size = sizeof(buttonmapping) / sizeof(buttonmapping[0]);
-    for (int i = 0; i < size; i++) {
-        if (buttonmapping[i].force == forveValue) {
-            return buttonmapping[i].mpc;
-        }
-    }
-    return -1;
+    return null;
 }
 
 // To compile define one of the following preprocesseur variables :
@@ -380,11 +378,18 @@ static void MPCSetMapButtonLed(snd_seq_event_t *ev) {
 
   int mapVal = -1 ;
 
-  int mpcValue = getMpcMappingValue(ev->data.control.param);
-  if (mpcValue >= 0) {
-      mapVal = mpcValue;
+  bool sent = false;
+  size_t size = sizeof(buttonmapping) / sizeof(buttonmapping[0]);
+  for (int i = 0; i < size; i++) {
+      if (buttonmapping[i].force == ev->data.control.param) {
+          ev->data.control.param = buttonmapping[i].mpc;
+          SendMidiEvent(ev);
+          sent = true;
+      }
   }
-  // test if i can switch on button leds
+  if (sent) {
+      return;
+  }
   else if (ev->data.control.param == FORCE_BT_ASSIGN_A) {
       ev->data.control.param = MPC_BT_BANK_A;
       SendMidiEvent(ev);
@@ -397,8 +402,8 @@ static void MPCSetMapButtonLed(snd_seq_event_t *ev) {
 
       ev->data.control.param = MPC_BT_BANK_D;
       SendMidiEvent(ev);
-
-      ev->data.control.param = MPC_BT_TC;
+   
+      ev->data.control.param = MPC_BT_QLINK_SELECT_LED_1;
       SendMidiEvent(ev);
 
       return;
@@ -523,6 +528,26 @@ static void MPCRefreshNavigationPads(bool show) {
   }
 }
 
+static void SetBankButtonLED(int button) {
+    snd_seq_event_t ev2;
+    snd_seq_ev_clear(&ev2);
+    ev2.type = SND_SEQ_EVENT_CONTROLLER;
+    ev2.data.control.channel = 0;
+    SetMidiEventDestination(&ev2, TO_CTRL_MPC_PRIVATE);
+
+    int bankbuttons[] = { MPC_BT_BANK_A, MPC_BT_BANK_B, MPC_BT_BANK_C,MPC_BT_BANK_D };
+    for( int i = 0; i < 4; i++) {
+        ev2.data.control.param = bankbuttons[i];
+        ev2.data.control.value = 1;
+        SendMidiEvent(&ev2);
+    }
+    ev2.data.control.param = button;
+    ev2.data.control.value = 3;
+    SendMidiEvent(&ev2);
+}
+
+static int Current_QLink_LED = MPC_BT_QLINK_SELECT_LED_1;
+
 ///////////////////////////////////////////////////////////////////////////////
 // Set a mapped MPC button  to a Force button
 ///////////////////////////////////////////////////////////////////////////////
@@ -531,15 +556,15 @@ static void MPCSetMapButton(snd_seq_event_t *ev) {
     int mapVal = -1 ;
     bool shiftReleaseBefore = false;
 
-    if      ( ev->data.note.note == MPC_BT_SHIFT ) {
+    if ( ev->data.note.note == MPC_BT_SHIFT ) {
         ShiftMode = ( ev->data.note.velocity == 0x7F ) ;
         mapVal = FORCE_BT_SHIFT ;
     }
 
-    else if (ev->data.note.note == MPC_BT_BANK_A) { MPCPadQuadran = MPC_QUADRAN_3; }
-    else if (ev->data.note.note == MPC_BT_BANK_B) { MPCPadQuadran = MPC_QUADRAN_4; }
-    else if (ev->data.note.note == MPC_BT_BANK_C) { MPCPadQuadran = MPC_QUADRAN_1; }
-    else if (ev->data.note.note == MPC_BT_BANK_D) { MPCPadQuadran = MPC_QUADRAN_2; }
+    else if (ev->data.note.note == MPC_BT_BANK_A) { MPCPadQuadran = MPC_QUADRAN_3; SetBankButtonLED(MPC_BT_BANK_A);}
+    else if (ev->data.note.note == MPC_BT_BANK_B) { MPCPadQuadran = MPC_QUADRAN_4; SetBankButtonLED(MPC_BT_BANK_B);}
+    else if (ev->data.note.note == MPC_BT_BANK_C) { MPCPadQuadran = MPC_QUADRAN_1; SetBankButtonLED(MPC_BT_BANK_C);}
+    else if (ev->data.note.note == MPC_BT_BANK_D) { MPCPadQuadran = MPC_QUADRAN_2; SetBankButtonLED(MPC_BT_BANK_D);}
 
     // SSM Mode for MPC with the PLUS key
     else if ( ev->data.note.note == MPC_BT_PLUS ) {
@@ -551,8 +576,6 @@ static void MPCSetMapButton(snd_seq_event_t *ev) {
     // Pad navigation mode with the MINUS key
     // If MINUS pressed when in MPCCOlumns pad mode : change mode
     else if ( ev->data.note.note == MPC_BT_MINUS ) {
-
-      KnobShiftMode = (ev->data.note.velocity == 0x7F);
 
       if ( MPCColumnsPadMode ) { 
           if ( ev->data.note.velocity == 0x7F ) {
@@ -568,40 +591,65 @@ static void MPCSetMapButton(snd_seq_event_t *ev) {
       }
     }
 
-    else if (ev->data.note.note == MPC_BT_ENCODER)      mapVal = getForceMappingValue(ev->data.note.note);
-    else if (ev->data.note.note == MPC_BT_PLAY)         mapVal = getForceMappingValue(ev->data.note.note);
-    else if (ev->data.note.note == MPC_BT_REC)          mapVal = getForceMappingValue(ev->data.note.note);
-    else if (ev->data.note.note == MPC_BT_MAIN)         mapVal = getForceMappingValue(ev->data.note.note);
-    else if (ev->data.note.note == MPC_BT_PLAY_START)   mapVal = getForceMappingValue(ev->data.note.note);
-    else if (ev->data.note.note == MPC_BT_NOTE_REPEAT)  mapVal = getForceMappingValue(ev->data.note.note);
-    else if (ev->data.note.note == MPC_BT_CHANNEL_MIXER)mapVal = getForceMappingValue(ev->data.note.note);
-    else if (ev->data.note.note == MPC_BT_NEXT_SEQ)     mapVal = getForceMappingValue(ev->data.note.note);
-    else if (ev->data.note.note == MPC_BT_TC)           mapVal = getForceMappingValue(ev->data.note.note);
-    else if (ev->data.note.note == MPC_BT_16_LEVEL)     mapVal = getForceMappingValue(ev->data.note.note);
-    else if (ev->data.note.note == MPC_BT_ERASE)        mapVal = getForceMappingValue(ev->data.note.note);
-    else if (ev->data.note.note == MPC_BT_TAP_TEMPO)    mapVal = getForceMappingValue(ev->data.note.note);
-    else if (ev->data.note.note == MPC_BT_UNDO)         mapVal = getForceMappingValue(ev->data.note.note);
-    else if (ev->data.note.note == MPC_BT_OVERDUB)      mapVal = getForceMappingValue(ev->data.note.note);
-    else if (ev->data.note.note == MPC_BT_FULL_LEVEL)   mapVal = getForceMappingValue(ev->data.note.note);
-    else if (ev->data.note.note == MPC_BT_STEP_SEQ)     mapVal = getForceMappingValue(ev->data.note.note);
-    else if (ev->data.note.note == MPC_BT_MUTE)         mapVal = getForceMappingValue(ev->data.note.note);
-
+    else if (
+        ev->data.note.note == MPC_BT_ENCODER ||
+        ev->data.note.note == MPC_BT_PLAY ||
+        ev->data.note.note == MPC_BT_REC ||
+        ev->data.note.note == MPC_BT_MAIN ||
+        ev->data.note.note == MPC_BT_PLAY_START ||
+        ev->data.note.note == MPC_BT_NOTE_REPEAT ||
+        ev->data.note.note == MPC_BT_CHANNEL_MIXER ||
+        ev->data.note.note == MPC_BT_NEXT_SEQ ||
+        ev->data.note.note == MPC_BT_TC ||
+        ev->data.note.note == MPC_BT_16_LEVEL ||
+        ev->data.note.note == MPC_BT_ERASE ||
+        ev->data.note.note == MPC_BT_TAP_TEMPO ||
+        ev->data.note.note == MPC_BT_UNDO ||
+        ev->data.note.note == MPC_BT_OVERDUB ||
+        ev->data.note.note == MPC_BT_FULL_LEVEL ||
+        ev->data.note.note == MPC_BT_STEP_SEQ ||
+        ev->data.note.note == MPC_BT_MUTE
+        ) {
+            mapping map = getForceMappingValue(ev->data.note.note);
+            if (!ShiftMode && map.shift > 0 && ev->data.note.velocity == 0x7F) {
+                SendDeviceKeyEvent(FORCE_BT_SHIFT, 0x7F);
+                SendDeviceKeyPress(map.shift);
+                SendDeviceKeyEvent(FORCE_BT_SHIFT, 0);
+                return;
+            }
+            else {
+                mapVal = map.force;
+            }
+    }
     // Knobs touch
     else if (  ev->data.note.note == MPC_BT_QLINK_SELECT ) {
+      
+      if (ev->data.note.velocity == 0x7F) {
+          // Set LED
+          snd_seq_event_t ev2;
+          snd_seq_ev_clear(&ev2);
+          ev2.type = SND_SEQ_EVENT_CONTROLLER;
+          ev2.data.control.channel = 0;
+          SetMidiEventDestination(&ev2, TO_CTRL_MPC_PRIVATE);
+          
+          //switch previous led off
+          ev2.data.control.param = Current_QLink_LED;
+          ev2.data.control.value = 0;
+          SendMidiEvent(&ev2);
 
-      if ( KnobTouch && ev->data.note.velocity == 0x7F ) KnobShiftMode = !KnobShiftMode ;
+          Current_QLink_LED++;
+          if (Current_QLink_LED > MPC_BT_QLINK_SELECT_LED_4) { Current_QLink_LED = MPC_BT_QLINK_SELECT_LED_1; }
 
-      // Set LED
-      snd_seq_event_t ev2;
-      snd_seq_ev_clear	(&ev2)	;
-      ev2.type = SND_SEQ_EVENT_CONTROLLER;
-      ev2.data.control.channel = 0 ;
-      ev2.data.control.param = MPC_BT_QLINK_SELECT_LED_1 ;
-      ev2.data.control.value = KnobShiftMode ? 3:0;
-      SetMidiEventDestination(&ev2,TO_CTRL_MPC_PRIVATE);
-      SendMidiEvent(&ev2 );
+          ev2.data.control.param = Current_QLink_LED;
+          ev2.data.control.value = 3;
 
-      if ( ! KnobShiftMode ) mapVal = FORCE_BT_KNOBS;
+          KnobShiftMode = (Current_QLink_LED == MPC_BT_QLINK_SELECT_LED_2 || Current_QLink_LED == MPC_BT_QLINK_SELECT_LED_4);
+
+          SendMidiEvent(&ev2);
+      }
+      if (Current_QLink_LED == MPC_BT_QLINK_SELECT_LED_1 || Current_QLink_LED == MPC_BT_QLINK_SELECT_LED_3) {
+          mapVal = FORCE_BT_KNOBS;
+      }
 
     }
     else if (  ev->data.note.note >= MPC_BT_QLINK1_TOUCH && ev->data.note.note <= MPC_BT_QLINK16_TOUCH ) {
@@ -686,7 +734,7 @@ void MidiMapperSetup() {
   DeviceSetPadColorValue(MPC_Id, 10, COLOR_FULL_YELLOW );
  
   ControllerInitialize();
-
+  
 }
 
 ///////////////////////////////////////////////////////////////////////////////
