@@ -243,7 +243,7 @@ static mapping buttonmapping[] = {
     {FORCE_BT_ARP, MPC_BT_TC},
     {FORCE_BT_STEP_SEQ, MPC_BT_STEP_SEQ},
     {FORCE_BT_STOP, MPC_BT_STOP},
-    {FORCE_BT_STOP_ALL, MPC_BT_OVERDUB},
+    {FORCE_BT_STOP_ALL, MPC_BT_OVERDUB , FORCE_BT_REC},
     {FORCE_BT_KNOBS, MPC_BT_QLINK_SELECT},
 
 #else
@@ -562,7 +562,7 @@ static void MPCSetMapButton(snd_seq_event_t *ev) {
     // Pad navigation mode with the MINUS key
     // If MINUS pressed when in MPCCOlumns pad mode : change mode
     else if ( ev->data.note.note == MPC_BT_MINUS ) {
-
+      
       if ( MPCColumnsPadMode ) { 
           if ( ev->data.note.velocity == 0x7F ) {
             if ( ++CurrentSoloMode == FORCE_SM_END ) CurrentSoloMode = 0 ;
@@ -623,10 +623,10 @@ static void MPCSetMapButton(snd_seq_event_t *ev) {
           ev2.data.control.param = Current_QLink_LED;
           ev2.data.control.value = 0;
           SendMidiEvent(&ev2);
-
+         
           Current_QLink_LED++;
           if (Current_QLink_LED > MPC_BT_QLINK_SELECT_LED_4) { Current_QLink_LED = MPC_BT_QLINK_SELECT_LED_1; }
-
+         
           ev2.data.control.param = Current_QLink_LED;
           ev2.data.control.value = 3;
 
