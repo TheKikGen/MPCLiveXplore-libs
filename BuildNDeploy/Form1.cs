@@ -75,30 +75,33 @@ namespace BuildNDeploy {
 
         private void button1_Click(object sender, EventArgs e) {
 
-            var bins = Directory.EnumerateFiles(config["Iamforce2_bin_path_windows"], " *.so");
+            
+           
+            
 
-            foreach (var bin in bins) {
-                log(bin.ToString());
-            }
-            Thread.Sleep(1);
-            var localfile = @$"{config["Iamforce2_bin_path_windows"]}\tmm-IamForce-LPMK3-LIVE2.so";
-            var remotepath = $"{config["Iamforce2_remote_dir"]}/tmm-IamForce-LPMK3-LIVE2.so";
-
-
-            SshClient sshclient = new SshClient("192.168.50.210", "root");
+            SshClient sshclient = new SshClient(config["mpc_ip"], "root");
             sshclient.Connect();
             SshCommand sc = sshclient.CreateCommand("systemctl stop inmusic-mpc; systemctl status inmusic-mpc");
             sc.Execute();
             log(sc.Result.Replace("\n", "\r\n") + "\r\n");
 
-            var scp = new ScpClient("192.168.50.210", "root");
-            scp.Connect();
-            scp.Uploading += delegate (object sender, ScpUploadEventArgs e) {
-                log($"uploaded {e.Filename} bytes {e.Uploaded} from {e.Size}");
-            };
+            var bins = Directory.EnumerateFiles(config["Iamforce2_bin_path_windows"], "*.so");
 
-            var file = new FileInfo(localfile);
-            scp.Upload(file, remotepath);
+            foreach (var bin in bins) {
+                log(bin.ToString());
+
+                var filename = Path.GetFileName(bin);
+                var remotepath = $"{config["Iamforce2_remote_dir"]}/{filename}";
+
+                var scp = new ScpClient(config["mpc_ip"], "root");
+                scp.Connect();
+                scp.Uploading += delegate (object sender, ScpUploadEventArgs e) {
+                    log($"uploaded {e.Filename} bytes {e.Uploaded} from {e.Size}");
+                };
+
+                var file = new FileInfo(bin);
+                scp.Upload(file, remotepath);
+            }
 
             sc = sshclient.CreateCommand("systemctl start inmusic-mpc; systemctl status inmusic-mpc");
             sc.Execute();
@@ -126,7 +129,7 @@ namespace BuildNDeploy {
                 logprocess = new Process {
                     StartInfo = new ProcessStartInfo {
                         FileName = "ssh ",
-                        Arguments = $"root@192.168.50.210 \"{cmd}\"",
+                        Arguments = $"root@{config["mpc_ip"]} \"{cmd}\"",
                         RedirectStandardOutput = true,
                         RedirectStandardError = true,
                         UseShellExecute = false,
