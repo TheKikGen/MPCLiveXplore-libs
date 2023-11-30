@@ -221,7 +221,6 @@ static mapping buttonmapping[] = {
     {FORCE_BT_MATRIX, MPC_BT_MAIN},
     {FORCE_BT_LAUNCH, MPC_BT_PLAY_START},
     {FORCE_BT_TAP_TEMPO, MPC_BT_TAP_TEMPO},
-    {FORCE_BT_EDIT, MPC_BT_ERASE},
     {FORCE_BT_UNDO, MPC_BT_UNDO},
     {FORCE_BT_NOTE, MPC_BT_16_LEVEL},
     {FORCE_BT_COPY, MPC_BT_COPY},
@@ -236,6 +235,7 @@ static mapping buttonmapping[] = {
 
 #if defined _LIVE2_ || _ONE_
 #warning MPC Model MPC LIVE II
+    {FORCE_BT_DELETE, MPC_BT_ERASE },
     {FORCE_BT_LOAD, MPC_BT_NOTE_REPEAT},
     {FORCE_BT_MIXER, MPC_BT_CHANNEL_MIXER},
     {FORCE_BT_SAVE, MPC_BT_FULL_LEVEL},
@@ -247,6 +247,7 @@ static mapping buttonmapping[] = {
     {FORCE_BT_KNOBS, MPC_BT_QLINK_SELECT},
 
 #else
+    {FORCE_BT_EDIT, MPC_BT_ERASE},
     {FORCE_BT_ARP, MPC_BT_NOTE_REPEAT},
     {FORCE_BT_MIXER, MPC_BT_FULL_LEVEL},
     {FORCE_BT_SAVE, MPC_BT_OVERDUB},
@@ -541,7 +542,7 @@ static void MPCSetMapButton(snd_seq_event_t *ev) {
 
     int mapVal = -1 ;
     bool shiftReleaseBefore = false;
-
+    
     if ( ev->data.note.note == MPC_BT_SHIFT ) {
         ShiftMode = ( ev->data.note.velocity == 0x7F ) ;
         mapVal = FORCE_BT_SHIFT ;
@@ -724,146 +725,146 @@ void MidiMapperSetup() {
 ///////////////////////////////////////////////////////////////////////////////
 bool MidiMapper( uint8_t sender, snd_seq_event_t *ev, uint8_t *buffer, size_t size ) {
 
-   switch (sender) {
- 
-   // Event from PUBLIC MPC application rawmidi port
-   // RAW MIDI. NO EVENT. USE BUFFER and SIZE (SYSEX)
-   case FROM_MPC_PUBLIC:
-      {
+    switch (sender) {
 
-       int i = 0;
-       //tklog_info("Midi RAW Event received from MPC PUBLIC\n");
+        // Event from PUBLIC MPC application rawmidi port
+        // RAW MIDI. NO EVENT. USE BUFFER and SIZE (SYSEX)
+    case FROM_MPC_PUBLIC:
+    {
 
-       // Akai Sysex :  F0 47 7F [id] (Fn) (len MSB) (len LSB) (data) F7
-       while ( buffer[i] == 0xF0 && buffer[i+1] == 0x47  && i < size ) {
+        int i = 0;
+       // tklog_info("Midi RAW Event received from MPC PUBLIC\n");
 
-          i += sizeof(AkaiSysex);
-          // Change Sysex device id
-          buffer[i++] = DeviceInfoBloc[MPC_Id].sysexId;
+        // Akai Sysex :  F0 47 7F [id] (Fn) (len MSB) (len LSB) (data) F7
+        while (buffer[i] == 0xF0 && buffer[i + 1] == 0x47 && i < size) {
 
-          // PAD COLOR
-          // Sysex : set pad color : FN  F0 47 7F [id] -> 65 (00 04) [Pad #] [R] [G] [B] F7
-          if ( buffer[i] == AKAI_DEVICE_SX_SET_PAD_RGB ) {
-          
-            i ++;
+            i += sizeof(AkaiSysex);
+            // Change Sysex device id
+            buffer[i++] = DeviceInfoBloc[MPC_Id].sysexId;
 
-            // Compute MSB + LSB len
-            uint16_t msgLen = ( buffer[i++] << 7 ) | buffer[i++];
+            // PAD COLOR
+            // Sysex : set pad color : FN  F0 47 7F [id] -> 65 (00 04) [Pad #] [R] [G] [B] F7
+            if (buffer[i] == AKAI_DEVICE_SX_SET_PAD_RGB) {
 
-            //= sizeof(MPCSysexPadColorFn) ;
+                i++;
 
-            uint8_t padF, padFL ,padFC ;
-            int padCt = -1 ;
+                // Compute MSB + LSB len
+                uint16_t msgLen = (buffer[i++] << 7) | buffer[i++];
 
-            // Manage mutliple set colors in the same sysex stream
-            while ( msgLen > 0 ) {
-              padF = buffer[i];
-              padFL = padF / 8;
-              padFC = padF % 8;
-              buffer[i] = ForceGetMPCPadIndex(buffer[i]);
-              i++;
+                //= sizeof(MPCSysexPadColorFn) ;
 
-              // Update Force pad color cache
-              Force_PadColorsCache[padF].c.r = buffer[i++];
-              Force_PadColorsCache[padF].c.g = buffer[i++];
-              Force_PadColorsCache[padF].c.b = buffer[i++];
+                uint8_t padF, padFL, padFC;
+                int padCt = -1;
 
-              //stklog_debug("PAD COLOR (len %d) (%d) %02X%02X%02X\n",msgLen,padF,Force_PadColorsCache[padF].c.r, Force_PadColorsCache[padF].c.g,Force_PadColorsCache[padF].c.b);
-              padCt = ControllerGetPadIndex(padF - CtrlPadQuadran);
-              if ( padCt >=0 ) ControllerSetPadColorRGB(padCt , Force_PadColorsCache[padF].c.r, Force_PadColorsCache[padF].c.g,Force_PadColorsCache[padF].c.b);
+                // Manage mutliple set colors in the same sysex stream
+                while (msgLen > 0) {
+                    padF = buffer[i];
+                    padFL = padF / 8;
+                    padFC = padF % 8;
+                    buffer[i] = ForceGetMPCPadIndex(buffer[i]);
+                    i++;
 
-              msgLen -= 4 ;
+                    // Update Force pad color cache
+                    Force_PadColorsCache[padF].c.r = buffer[i++];
+                    Force_PadColorsCache[padF].c.g = buffer[i++];
+                    Force_PadColorsCache[padF].c.b = buffer[i++];
+
+                    //stklog_debug("PAD COLOR (len %d) (%d) %02X%02X%02X\n",msgLen,padF,Force_PadColorsCache[padF].c.r, Force_PadColorsCache[padF].c.g,Force_PadColorsCache[padF].c.b);
+                    padCt = ControllerGetPadIndex(padF - CtrlPadQuadran);
+                    if (padCt >= 0) ControllerSetPadColorRGB(padCt, Force_PadColorsCache[padF].c.r, Force_PadColorsCache[padF].c.g, Force_PadColorsCache[padF].c.b);
+
+                    msgLen -= 4;
+                }
+
             }
 
-          }
+            // Reach end of sysex to loop on the next sysex command
+            while (buffer[i++] != 0xF7) if (i >= size) break;
+        }
 
-          // Reach end of sysex to loop on the next sysex command
-          while ( buffer[i++] != 0xF7 ) if ( i>= size ) break;
-       }
+        // Send the sysex to the MPC
+        orig_snd_rawmidi_write(raw_outpub, buffer, size);
 
-       // Send the sysex to the MPC
-       orig_snd_rawmidi_write(raw_outpub,buffer,size);
+        // Refresh special modes
+        if (ControllerColumnsPadMode) ControllerRefreshColumnsPads(true);
+        if (MPCColumnsPadMode) MPCRefreshColumnsPads(true);
+        if (MPCNavigationPadMode) MPCRefreshNavigationPads(true);
 
-       // Refresh special modes
-       if ( ControllerColumnsPadMode) ControllerRefreshColumnsPads(true);
-       if ( MPCColumnsPadMode) MPCRefreshColumnsPads(true);
-       if ( MPCNavigationPadMode) MPCRefreshNavigationPads(true);
-       
-       return false; // Do not allow default send
+        return false; // Do not allow default send
 
-       break;
-     }
-   
-   // Event from PRIVATE MPC application rawmidi port
-   case FROM_MPC_PRIVATE:
-       //tklog_info("Midi Event received from MPC PRIVATE\n");
+        break;
+    }
 
-       switch (ev->type) {
-         case SND_SEQ_EVENT_CONTROLLER:
-           // Button Led
-           if ( ev->data.control.channel == 0 ) {
+    // Event from PRIVATE MPC application rawmidi port
+    case FROM_MPC_PRIVATE:
+        //tklog_info("Midi Event received from MPC PRIVATE\n");
 
-             // Save Led status in cache
-             Force_ButtonLedsCache[ev->data.control.param] = ev->data.control.value;
+        switch (ev->type) {
+        case SND_SEQ_EVENT_CONTROLLER:
+            // Button Led
+            if (ev->data.control.channel == 0) {
 
-             // Map with controller leds. Will send a midi msg to the controller
-             ControllerSetMapButtonLed(ev);
+                // Save Led status in cache
+                Force_ButtonLedsCache[ev->data.control.param] = ev->data.control.value;
 
-             // Map with MPC device leds
-             MPCSetMapButtonLed(ev);
+                // Map with controller leds. Will send a midi msg to the controller
+                ControllerSetMapButtonLed(ev);
 
-             return false;
+                // Map with MPC device leds
+                MPCSetMapButtonLed(ev);
 
-           }
-           break;
+                return false;
+
+            }
+            break;
 
         }
 
-       break;
+        break;
 
-   // Event from MPC hardware internal controller
-   case FROM_CTRL_MPC:
-       //tklog_info("Midi Event received from CTRL MPC\n");
+        // Event from MPC hardware internal controller
+    case FROM_CTRL_MPC:
+        tklog_info("Midi Event received from CTRL MPC %d\n", ev->data.note.note);
 
-       switch (ev->type ) {
+        switch (ev->type) {
 
-         case SND_SEQ_EVENT_SYSEX:
+        case SND_SEQ_EVENT_SYSEX:
 
-             // Identity request reply
-             if ( memcmp(ev->data.ext.ptr,IdentityReplySysexHeader,sizeof(IdentityReplySysexHeader) ) == 0 ) {
-               memcpy(ev->data.ext.ptr + sizeof(IdentityReplySysexHeader),DeviceInfoBloc[MPC_FORCE].sysexIdReply, sizeof(DeviceInfoBloc[MPC_FORCE].sysexIdReply) );
-             }
+            // Identity request reply
+            if (memcmp(ev->data.ext.ptr, IdentityReplySysexHeader, sizeof(IdentityReplySysexHeader)) == 0) {
+                memcpy(ev->data.ext.ptr + sizeof(IdentityReplySysexHeader), DeviceInfoBloc[MPC_FORCE].sysexIdReply, sizeof(DeviceInfoBloc[MPC_FORCE].sysexIdReply));
+            }
 
-             break;
+            break;
 
-         // KNOBS TURN FROM MPC
-         // B0 [10-31] [7F - n] : Qlinks    B0 64 nn : Main encoder
-         case SND_SEQ_EVENT_CONTROLLER:
-             if ( ev->data.control.channel == 0  && ev->data.control.param >= 0x10 && ev->data.control.param <= 0x31 ) {
+            // KNOBS TURN FROM MPC
+            // B0 [10-31] [7F - n] : Qlinks    B0 64 nn : Main encoder
+        case SND_SEQ_EVENT_CONTROLLER:
+            if (ev->data.control.channel == 0 && ev->data.control.param >= 0x10 && ev->data.control.param <= 0x31) {
 
-                   if ( KnobShiftMode && DeviceInfoBloc[MPC_Id].qlinkKnobsCount == 4 ) ev->data.control.param +=  4 ;
-                   else if ( ev->data.control.param > 0x17 ) return false;
-             }
+                if (KnobShiftMode && DeviceInfoBloc[MPC_Id].qlinkKnobsCount == 4) ev->data.control.param += 4;
+                else if (ev->data.control.param > 0x17) return false;
+            }
 
-             break;
+            break;
 
-         case SND_SEQ_EVENT_NOTEON:
-         case SND_SEQ_EVENT_NOTEOFF:
-         case SND_SEQ_EVENT_KEYPRESS:
-             // Buttons on channel 0
-             if ( ev->type != SND_SEQ_EVENT_KEYPRESS && ev->data.note.channel == 0 ) {
-                MPCSetMapButton(ev) ;
+        case SND_SEQ_EVENT_NOTEON:
+        case SND_SEQ_EVENT_NOTEOFF:
+        case SND_SEQ_EVENT_KEYPRESS:
+            // Buttons on channel 0
+            if (ev->type != SND_SEQ_EVENT_KEYPRESS && ev->data.note.channel == 0) {
+                MPCSetMapButton(ev);
                 return false;
-             }
+            }
 
-             // Mpc Pads on channel 9
-             if ( ev->data.note.channel == 9 ) {
+            // Mpc Pads on channel 9
+            if (ev->data.note.channel == 9) {
 
-              // Check if navigation pad mode is active 
-              if ( MPCNavigationPadMode ) {
+                // Check if navigation pad mode is active 
+                if (MPCNavigationPadMode) {
 
-                    if ( ev->type == SND_SEQ_EVENT_NOTEON ) {
-                        
+                    if (ev->type == SND_SEQ_EVENT_NOTEON) {
+
                         // Check MPC Columns modes
                         // ----------------------------------------------------
                         // | LAUNCH 1 |  First SEQ |   PREV SEQ |  NEXT SEQ |
@@ -876,191 +877,192 @@ bool MidiMapper( uint8_t sender, snd_seq_event_t *ev, uint8_t *buffer, size_t si
                         // ----------------------------------------------------
 
                         int padF = MPCGetForcePadNote(ev->data.note.note) - FORCEPADS_NOTE_OFFSET;
- 
+
                         switch (ev->data.note.note)
                         {
                         case MPC_PAD_1:
                         case MPC_PAD_5:
                         case MPC_PAD_9:
                         case MPC_PAD_13:
-                          // Launch the right line
-                          //tklog_debug("Launch PadF %d \n",padF);
-                          SendDeviceKeyPress(FORCE_BT_LAUNCH_1 + padF / 8);
-                          break;
+                            // Launch the right line
+                            //tklog_debug("Launch PadF %d \n",padF);
+                            SendDeviceKeyPress(FORCE_BT_LAUNCH_1 + padF / 8);
+                            break;
 
-                        // QUADRANS
+                            // QUADRANS
                         case MPC_PAD_3:
-                           MPCPadQuadran = MPC_QUADRAN_3;
-                           break;
+                            MPCPadQuadran = MPC_QUADRAN_3;
+                            break;
                         case MPC_PAD_4:
-                           MPCPadQuadran = MPC_QUADRAN_4; 
-                           break;
+                            MPCPadQuadran = MPC_QUADRAN_4;
+                            break;
                         case MPC_PAD_7:
-                           MPCPadQuadran = MPC_QUADRAN_1; 
-                           break;
+                            MPCPadQuadran = MPC_QUADRAN_1;
+                            break;
                         case MPC_PAD_8:
-                           MPCPadQuadran = MPC_QUADRAN_2; 
-                           break;
+                            MPCPadQuadran = MPC_QUADRAN_2;
+                            break;
 
-                        // Sequence macros
+                            // Sequence macros
                         case MPC_PAD_16:
-                           IamForceMacro_NextSeq(1);
-                           break;
+                            IamForceMacro_NextSeq(1);
+                            break;
                         case MPC_PAD_15:
-                           IamForceMacro_NextSeq(-1);
-                           break;
+                            IamForceMacro_NextSeq(-1);
+                            break;
                         case MPC_PAD_14:
-                           IamForceMacro_NextSeq(0);
-                           break;
+                            IamForceMacro_NextSeq(0);
+                            break;
                         case MPC_PAD_10:
-                           IamForceMacro_NextSeq(100);
-                           break;
+                            IamForceMacro_NextSeq(100);
+                            break;
 
-                        // Arrows
+                            // Arrows
                         case MPC_PAD_2:
-                           SendDeviceKeyPress(FORCE_BT_DOWN);
-                           break;
+                            SendDeviceKeyPress(FORCE_BT_DOWN);
+                            break;
                         case MPC_PAD_6:
-                           SendDeviceKeyPress(FORCE_BT_UP);
-                           break;
+                            SendDeviceKeyPress(FORCE_BT_UP);
+                            break;
                         case MPC_PAD_11:
-                           SendDeviceKeyPress(FORCE_BT_LEFT);
-                           break;
+                            SendDeviceKeyPress(FORCE_BT_LEFT);
+                            break;
                         case MPC_PAD_12:
-                           SendDeviceKeyPress(FORCE_BT_RIGHT);
-                           break;
-                        }  
+                            SendDeviceKeyPress(FORCE_BT_RIGHT);
+                            break;
+                        }
 
-                        MPCRefresCurrentQuadran(); 
+                        MPCRefresCurrentQuadran();
                         MPCRefreshNavigationPads(true);
-     
-                    } 
-                     
+
+                    }
+
                     return false;
-               } 
-              else 
-              if ( MPCColumnsPadMode ) {
-                  
-                  if ( ev->type == SND_SEQ_EVENT_KEYPRESS ) return false;
+                }
+                else
+                    if (MPCColumnsPadMode) {
 
-                  uint8_t padM = MPCGetPadIndexFromNote(ev->data.note.note);
-                  uint8_t padMC = padM %4;
-                  uint8_t padML = padM /4;
+                        if (ev->type == SND_SEQ_EVENT_KEYPRESS) return false;
 
-                  ev->data.note.channel = 0;
+                        uint8_t padM = MPCGetPadIndexFromNote(ev->data.note.note);
+                        uint8_t padMC = padM % 4;
+                        uint8_t padML = padM / 4;
 
-                  // Column pads
-                  if ( padML == 1 || padML == 3 ) {
+                        ev->data.note.channel = 0;
 
-                      ev->data.note.note = FORCE_BT_COLUMN_PAD1 + padMC + ( padML == 1 ? 4 : 0) ;
-                      ev->data.note.velocity = ( ev->data.note.velocity > 0 ? 0x7F:00);
-                  } 
-                  else {
-                      ev->data.note.note = FORCE_BT_MUTE_PAD1 + padMC + ( padML == 0 ? 4 : 0);
-                      ev->data.note.velocity = ( ev->data.note.velocity > 0 ? 0x7F:00);
-                  }     
-              } 
-              
-              else {
+                        // Column pads
+                        if (padML == 1 || padML == 3) {
 
-                  // Pads as usual
-                  ev->data.note.note = MPCGetForcePadNote(ev->data.note.note) ;
+                            ev->data.note.note = FORCE_BT_COLUMN_PAD1 + padMC + (padML == 1 ? 4 : 0);
+                            ev->data.note.velocity = (ev->data.note.velocity > 0 ? 0x7F : 00);
+                        }
+                        else {
+                            ev->data.note.note = FORCE_BT_MUTE_PAD1 + padMC + (padML == 0 ? 4 : 0);
+                            ev->data.note.velocity = (ev->data.note.velocity > 0 ? 0x7F : 00);
+                        }
+                    }
 
-                  // If Shift Mode, simulate Select key
-                  if ( ShiftMode ) {
-                    SendDeviceKeyEvent(FORCE_BT_SELECT,0x7F);
-                    SendMidiEvent(ev);
-                    SendDeviceKeyEvent(FORCE_BT_SELECT,0);
-                    return false;
-                  }
+                    else {
 
-              }
-             
-             }
+                        // Pads as usual
+                        ev->data.note.note = MPCGetForcePadNote(ev->data.note.note);
 
-             break;
+                        // If Shift Mode, simulate Select key
+                        if (ShiftMode) {
+                            SendDeviceKeyEvent(FORCE_BT_SELECT, 0x7F);
+                            SendMidiEvent(ev);
+                            SendDeviceKeyEvent(FORCE_BT_SELECT, 0);
+                            return false;
+                        }
 
-       }
-       break;
+                    }
 
-   // Event from MPC application port mapped with external controller.
-   // This port is also used to catch specific CC mapping for global Force command macros
-   // By using the standard routing in the Force midi setting, it is possible 
-   // to send specific CC/channel 16 to the  port name = "TKGL_(your controller name)" to trig those commands.
-   
-   case FROM_MPC_EXTCTRL:
-       //tklog_debug("Midi Event received from MPC EXCTRL\n");
-        if ( ev->type == SND_SEQ_EVENT_CONTROLLER ) {
+            }
 
-          // Is it one of our IAMFORCE macros on midi channel 16 ?
-          if (  ev->data.control.channel = IAMFORCE_MACRO_MIDICH && ev->data.control.param < IAMFORCE_CC_MACRO_LAST_ENTRY ) {
-                tklog_debug("Macro received %02X %02X\n",ev->data.control.param,ev->data.control.value);
+            break;
+
+        }
+        break;
+
+        // Event from MPC application port mapped with external controller.
+        // This port is also used to catch specific CC mapping for global Force command macros
+        // By using the standard routing in the Force midi setting, it is possible 
+        // to send specific CC/channel 16 to the  port name = "TKGL_(your controller name)" to trig those commands.
+
+    case FROM_MPC_EXTCTRL:
+        tklog_debug("Midi Event received from MPC EXCTRL\n");
+        if (ev->type == SND_SEQ_EVENT_CONTROLLER) {
+
+            // Is it one of our IAMFORCE macros on midi channel 16 ?
+            if (ev->data.control.channel == IAMFORCE_MACRO_MIDICH && ev->data.control.param < IAMFORCE_CC_MACRO_LAST_ENTRY) {
+                tklog_debug("Macro received %02X %02X\n", ev->data.control.param, ev->data.control.value);
 
                 // CC 00 is the first CC on channel 16
-                 
+
                 int mapVal = -1;
-                switch (ev->data.control.param  )
+                switch (ev->data.control.param)
                 {
-                  case IAMFORCE_CC_MACRO_PLAY:
-                    mapVal = FORCE_BT_PLAY;                    
+                case IAMFORCE_CC_MACRO_PLAY:
+                    mapVal = FORCE_BT_PLAY;
                     break;
 
-                  case IAMFORCE_CC_MACRO_STOP:
+                case IAMFORCE_CC_MACRO_STOP:
                     mapVal = FORCE_BT_STOP;
                     break;
 
-                  case IAMFORCE_CC_MACRO_REC:
+                case IAMFORCE_CC_MACRO_REC:
                     mapVal = FORCE_BT_REC;
                     break;
 
-                  case IAMFORCE_CC_MACRO_TAP:
+                case IAMFORCE_CC_MACRO_TAP:
                     mapVal = FORCE_BT_TAP_TEMPO;
                     break;
 
-                  case IAMFORCE_CC_MACRO_PREV_SEQ:
-                    if ( ev->data.control.value > 0 ) IamForceMacro_NextSeq(-1);
+                case IAMFORCE_CC_MACRO_PREV_SEQ:
+                    if (ev->data.control.value > 0) IamForceMacro_NextSeq(-1);
                     break;
 
-                  case IAMFORCE_CC_MACRO_NEXT_SEQ:                
-                    if ( ev->data.control.value > 0 ) IamForceMacro_NextSeq(1);
+                case IAMFORCE_CC_MACRO_NEXT_SEQ:
+                    if (ev->data.control.value > 0) IamForceMacro_NextSeq(1);
                     break;
 
-                  case IAMFORCE_CC_MACRO_FIRST_SEQ:
-                    if ( ev->data.control.value > 0 ) IamForceMacro_NextSeq(0);
+                case IAMFORCE_CC_MACRO_FIRST_SEQ:
+                    if (ev->data.control.value > 0) IamForceMacro_NextSeq(0);
                     break;
 
-                  case IAMFORCE_CC_MACRO_LAST_SEQ:
-                    if ( ev->data.control.value > 0 ) IamForceMacro_NextSeq(100);
+                case IAMFORCE_CC_MACRO_LAST_SEQ:
+                    if (ev->data.control.value > 0) IamForceMacro_NextSeq(100);
                     break;
 
-                  case IAMFORCE_CC_MACRO_ARP:
+                case IAMFORCE_CC_MACRO_ARP:
                     mapVal = FORCE_BT_ARP;
                     break;
 
-                  case IAMFORCE_CC_MACRO_UNDO:
+                case IAMFORCE_CC_MACRO_UNDO:
                     mapVal = FORCE_BT_UNDO;
                     break;
 
                 }
 
-                if ( mapVal >= 0 ) {
+                if (mapVal >= 0) {
 
-                  if ( ev->data.control.value == 1  ) SendDeviceKeyPress(mapVal);
-                  else SendDeviceKeyEvent(mapVal,ev->data.control.value);
+                    if (ev->data.control.value == 1) SendDeviceKeyPress(mapVal);
+                    else SendDeviceKeyEvent(mapVal, ev->data.control.value);
                 }
 
                 return false; // Never go back to MPC for macros...
-          }
+            }
         }
 
-       break;
+        break;
 
-   // Event from external controller HARDWARE
+        // Event from external controller HARDWARE
 
-   case FROM_CTRL_EXT:
-       //tklog_debug("Midi Event received from CTRL EXT\n");
-       return ControllerEventReceived(ev);
- }
+    case FROM_CTRL_EXT:
+        tklog_debug("Midi Event received from CTRL EXT\n");
+        return ControllerEventReceived(ev);
+
+    }
  return true;
 
 }

@@ -1,0 +1,80 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.7.34018.315
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "BuildNDeploy", "BuildNDeploy\BuildNDeploy.csproj", "{39D1B911-A909-4FAB-B83C-9AD382E3FC62}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution Items", "{18A7FE29-87FE-4B45-8521-72FC4076B0A2}"
+	ProjectSection(SolutionItems) = preProject
+		src\tkgl_ctrldump.c = src\tkgl_ctrldump.c
+		src\tkgl_ctrldump.so = src\tkgl_ctrldump.so
+		src\tkgl_logutil.h = src\tkgl_logutil.h
+		src\tkgl_midimapper.c = src\tkgl_midimapper.c
+		src\tkgl_midimapper.h = src\tkgl_midimapper.h
+		src\tkgl_midimapper.so = src\tkgl_midimapper.so
+		src\tkgl_strcmp.c = src\tkgl_strcmp.c
+		src\tkgl_strcmp.so = src\tkgl_strcmp.so
+		src\wsl2_mk = src\wsl2_mk
+	EndProjectSection
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tmm-plugins", "tmm-plugins", "{626B5B61-93FB-454A-968B-67A29BC5CAFC}"
+	ProjectSection(SolutionItems) = preProject
+		src\tmm-plugins\Iamforce-APCKEY25MK2.h = src\tmm-plugins\Iamforce-APCKEY25MK2.h
+		src\tmm-plugins\Iamforce-APCMINIMK2.h = src\tmm-plugins\Iamforce-APCMINIMK2.h
+		src\tmm-plugins\Iamforce-KIKPADMK3.h = src\tmm-plugins\Iamforce-KIKPADMK3.h
+		src\tmm-plugins\Iamforce-LPMK2.h = src\tmm-plugins\Iamforce-LPMK2.h
+		src\tmm-plugins\Iamforce-LPMK3.h = src\tmm-plugins\Iamforce-LPMK3.h
+		src\tmm-plugins\Iamforce-LPPROMK3.h = src\tmm-plugins\Iamforce-LPPROMK3.h
+		src\tmm-plugins\Iamforce-LPX.h = src\tmm-plugins\Iamforce-LPX.h
+		src\tmm-plugins\Iamforce-NONE.h = src\tmm-plugins\Iamforce-NONE.h
+		src\tmm-plugins\tmm-Force-A800-globals.c = src\tmm-plugins\tmm-Force-A800-globals.c
+		src\tmm-plugins\tmm-Force-A800-globals.so = src\tmm-plugins\tmm-Force-A800-globals.so
+		src\tmm-plugins\tmm-hellotkgl.c = src\tmm-plugins\tmm-hellotkgl.c
+		src\tmm-plugins\tmm-hellotkgl.so = src\tmm-plugins\tmm-hellotkgl.so
+		src\tmm-plugins\tmm-IamForce-APCKEY25MK2.so = src\tmm-plugins\tmm-IamForce-APCKEY25MK2.so
+		src\tmm-plugins\tmm-IamForce-APCMINIMK2.so = src\tmm-plugins\tmm-IamForce-APCMINIMK2.so
+		src\tmm-plugins\tmm-IamForce-KIKPADMK3.so = src\tmm-plugins\tmm-IamForce-KIKPADMK3.so
+		src\tmm-plugins\tmm-IamForce-LPMK3.so = src\tmm-plugins\tmm-IamForce-LPMK3.so
+		src\tmm-plugins\tmm-IamForce-LPX.so = src\tmm-plugins\tmm-IamForce-LPX.so
+		src\tmm-plugins\tmm-IamForce-NONE.so = src\tmm-plugins\tmm-IamForce-NONE.so
+		src\tmm-plugins\tmm-IamForce2.c = src\tmm-plugins\tmm-IamForce2.c
+	EndProjectSection
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "deprecated", "deprecated", "{A0494109-0F14-49A1-8418-42434F45BB40}"
+	ProjectSection(SolutionItems) = preProject
+		src\deprecated\tkgl_anyctrl.c = src\deprecated\tkgl_anyctrl.c
+		src\deprecated\tkgl_anyctrl.so = src\deprecated\tkgl_anyctrl.so
+		src\deprecated\tkgl_anyctrl_lt.c = src\deprecated\tkgl_anyctrl_lt.c
+		src\deprecated\tkgl_anyctrl_lt.so = src\deprecated\tkgl_anyctrl_lt.so
+		src\deprecated\tkgl_anysnd.c = src\deprecated\tkgl_anysnd.c
+		src\deprecated\tkgl_iamforcectrl.c = src\deprecated\tkgl_iamforcectrl.c
+		src\deprecated\tkgl_iamforcectrl.so = src\deprecated\tkgl_iamforcectrl.so
+		src\deprecated\tkgl_mpcmapper.c = src\deprecated\tkgl_mpcmapper.c
+		src\deprecated\tkgl_mpcmapper.h = src\deprecated\tkgl_mpcmapper.h
+		src\deprecated\tkgl_mpcmapper.ini = src\deprecated\tkgl_mpcmapper.ini
+		src\deprecated\tkgl_mpcmapper.so = src\deprecated\tkgl_mpcmapper.so
+	EndProjectSection
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{39D1B911-A909-4FAB-B83C-9AD382E3FC62}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{39D1B911-A909-4FAB-B83C-9AD382E3FC62}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{39D1B911-A909-4FAB-B83C-9AD382E3FC62}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{39D1B911-A909-4FAB-B83C-9AD382E3FC62}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{626B5B61-93FB-454A-968B-67A29BC5CAFC} = {18A7FE29-87FE-4B45-8521-72FC4076B0A2}
+		{A0494109-0F14-49A1-8418-42434F45BB40} = {18A7FE29-87FE-4B45-8521-72FC4076B0A2}
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {876C4E24-9AD0-4858-A708-4C738913A702}
+	EndGlobalSection
+EndGlobal
