@@ -3,3 +3,7 @@
 ################################################################################
 
 /.vs
+/BuildNDeploy/obj
+/BuildNDeploy/.vs/BuildNDeploy/v17
+/BuildNDeploy/bin/Debug/net6.0-windows
+/BuildNDeploy/BuildNDeploy.csproj.user
