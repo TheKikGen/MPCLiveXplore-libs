@@ -611,40 +611,40 @@ static void MPCSetMapButton(snd_seq_event_t *ev) {
     }
     // Knobs touch
     else if (  ev->data.note.note == MPC_BT_QLINK_SELECT ) {
-      
-      if (ev->data.note.velocity == 0x7F) {
-          // Set LED
-          snd_seq_event_t ev2;
-          snd_seq_ev_clear(&ev2);
-          ev2.type = SND_SEQ_EVENT_CONTROLLER;
-          ev2.data.control.channel = 0;
-          SetMidiEventDestination(&ev2, TO_CTRL_MPC_PRIVATE);
-          
-          //switch previous led off
-          ev2.data.control.param = Current_QLink_LED;
-          ev2.data.control.value = 0;
-          SendMidiEvent(&ev2);
-         
-          Current_QLink_LED++;
-          if (Current_QLink_LED > MPC_BT_QLINK_SELECT_LED_4) { Current_QLink_LED = MPC_BT_QLINK_SELECT_LED_1; }
-         
-          ev2.data.control.param = Current_QLink_LED;
-          ev2.data.control.value = 3;
+        if (!ShiftMode) {
+            if (ev->data.note.velocity == 0x7F) {
+                // Set LED
+                snd_seq_event_t ev2;
+                snd_seq_ev_clear(&ev2);
+                ev2.type = SND_SEQ_EVENT_CONTROLLER;
+                ev2.data.control.channel = 0;
+                SetMidiEventDestination(&ev2, TO_CTRL_MPC_PRIVATE);
 
-          KnobShiftMode = (Current_QLink_LED == MPC_BT_QLINK_SELECT_LED_2 || Current_QLink_LED == MPC_BT_QLINK_SELECT_LED_4);
+                //switch previous led off
+                ev2.data.control.param = Current_QLink_LED;
+                ev2.data.control.value = 0;
+                SendMidiEvent(&ev2);
 
-          SendMidiEvent(&ev2);
-      }
-      if (Current_QLink_LED == MPC_BT_QLINK_SELECT_LED_1 || Current_QLink_LED == MPC_BT_QLINK_SELECT_LED_3) {
-          mapVal = FORCE_BT_KNOBS;
-      }
+                Current_QLink_LED++;
+                if (Current_QLink_LED > MPC_BT_QLINK_SELECT_LED_4) { Current_QLink_LED = MPC_BT_QLINK_SELECT_LED_1; }
 
+                ev2.data.control.param = Current_QLink_LED;
+                ev2.data.control.value = 3;
+
+                KnobShiftMode = (Current_QLink_LED == MPC_BT_QLINK_SELECT_LED_2 || Current_QLink_LED == MPC_BT_QLINK_SELECT_LED_4);
+
+                SendMidiEvent(&ev2);
+            }
+            if (Current_QLink_LED == MPC_BT_QLINK_SELECT_LED_1 || Current_QLink_LED == MPC_BT_QLINK_SELECT_LED_3) {
+                mapVal = FORCE_BT_KNOBS;
+            }
+        }
     }
     else if (  ev->data.note.note >= MPC_BT_QLINK1_TOUCH && ev->data.note.note <= MPC_BT_QLINK16_TOUCH ) {
       mapVal = ev->data.note.note - 1 ;
       KnobTouch = ( ev->data.note.velocity == 0x7F ) ;
 
-      //tklog_debug("Knob touch = %s \n",KnobTouch ? "True":"False");
+      //tklog_debug("Knob touch = %s  note =   %d \n",KnobTouch ? "True":"False", ev->data.note.note);
 
       if (  DeviceInfoBloc[MPC_Id].qlinkKnobsCount == 4 ) {
         if ( KnobShiftMode ) mapVal += 4;
@@ -824,7 +824,7 @@ bool MidiMapper( uint8_t sender, snd_seq_event_t *ev, uint8_t *buffer, size_t si
 
         // Event from MPC hardware internal controller
     case FROM_CTRL_MPC:
-        tklog_info("Midi Event received from CTRL MPC %d\n", ev->data.note.note);
+        //tklog_info("Midi Event received from CTRL MPC %d\n", ev->data.note.note);
 
         switch (ev->type) {
 
@@ -990,7 +990,7 @@ bool MidiMapper( uint8_t sender, snd_seq_event_t *ev, uint8_t *buffer, size_t si
         // to send specific CC/channel 16 to the  port name = "TKGL_(your controller name)" to trig those commands.
 
     case FROM_MPC_EXTCTRL:
-        tklog_debug("Midi Event received from MPC EXCTRL\n");
+        //tklog_debug("Midi Event received from MPC EXCTRL\n");
         if (ev->type == SND_SEQ_EVENT_CONTROLLER) {
 
             // Is it one of our IAMFORCE macros on midi channel 16 ?
@@ -1059,7 +1059,7 @@ bool MidiMapper( uint8_t sender, snd_seq_event_t *ev, uint8_t *buffer, size_t si
         // Event from external controller HARDWARE
 
     case FROM_CTRL_EXT:
-        tklog_debug("Midi Event received from CTRL EXT\n");
+        //tklog_debug("Midi Event received from CTRL EXT\n");
         return ControllerEventReceived(ev);
 
     }

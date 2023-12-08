@@ -8,13 +8,10 @@ EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution Items", "{18A7FE29-87FE-4B45-8521-72FC4076B0A2}"
 	ProjectSection(SolutionItems) = preProject
 		src\tkgl_ctrldump.c = src\tkgl_ctrldump.c
-		src\tkgl_ctrldump.so = src\tkgl_ctrldump.so
 		src\tkgl_logutil.h = src\tkgl_logutil.h
 		src\tkgl_midimapper.c = src\tkgl_midimapper.c
 		src\tkgl_midimapper.h = src\tkgl_midimapper.h
-		src\tkgl_midimapper.so = src\tkgl_midimapper.so
 		src\tkgl_strcmp.c = src\tkgl_strcmp.c
-		src\tkgl_strcmp.so = src\tkgl_strcmp.so
 		src\wsl2_mk = src\wsl2_mk
 	EndProjectSection
 EndProject
@@ -29,31 +26,19 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tmm-plugins", "tmm-plugins"
 		src\tmm-plugins\Iamforce-LPX.h = src\tmm-plugins\Iamforce-LPX.h
 		src\tmm-plugins\Iamforce-NONE.h = src\tmm-plugins\Iamforce-NONE.h
 		src\tmm-plugins\tmm-Force-A800-globals.c = src\tmm-plugins\tmm-Force-A800-globals.c
-		src\tmm-plugins\tmm-Force-A800-globals.so = src\tmm-plugins\tmm-Force-A800-globals.so
 		src\tmm-plugins\tmm-hellotkgl.c = src\tmm-plugins\tmm-hellotkgl.c
-		src\tmm-plugins\tmm-hellotkgl.so = src\tmm-plugins\tmm-hellotkgl.so
-		src\tmm-plugins\tmm-IamForce-APCKEY25MK2.so = src\tmm-plugins\tmm-IamForce-APCKEY25MK2.so
-		src\tmm-plugins\tmm-IamForce-APCMINIMK2.so = src\tmm-plugins\tmm-IamForce-APCMINIMK2.so
-		src\tmm-plugins\tmm-IamForce-KIKPADMK3.so = src\tmm-plugins\tmm-IamForce-KIKPADMK3.so
-		src\tmm-plugins\tmm-IamForce-LPMK3.so = src\tmm-plugins\tmm-IamForce-LPMK3.so
-		src\tmm-plugins\tmm-IamForce-LPX.so = src\tmm-plugins\tmm-IamForce-LPX.so
-		src\tmm-plugins\tmm-IamForce-NONE.so = src\tmm-plugins\tmm-IamForce-NONE.so
 		src\tmm-plugins\tmm-IamForce2.c = src\tmm-plugins\tmm-IamForce2.c
 	EndProjectSection
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "deprecated", "deprecated", "{A0494109-0F14-49A1-8418-42434F45BB40}"
 	ProjectSection(SolutionItems) = preProject
 		src\deprecated\tkgl_anyctrl.c = src\deprecated\tkgl_anyctrl.c
-		src\deprecated\tkgl_anyctrl.so = src\deprecated\tkgl_anyctrl.so
 		src\deprecated\tkgl_anyctrl_lt.c = src\deprecated\tkgl_anyctrl_lt.c
-		src\deprecated\tkgl_anyctrl_lt.so = src\deprecated\tkgl_anyctrl_lt.so
 		src\deprecated\tkgl_anysnd.c = src\deprecated\tkgl_anysnd.c
 		src\deprecated\tkgl_iamforcectrl.c = src\deprecated\tkgl_iamforcectrl.c
-		src\deprecated\tkgl_iamforcectrl.so = src\deprecated\tkgl_iamforcectrl.so
 		src\deprecated\tkgl_mpcmapper.c = src\deprecated\tkgl_mpcmapper.c
 		src\deprecated\tkgl_mpcmapper.h = src\deprecated\tkgl_mpcmapper.h
 		src\deprecated\tkgl_mpcmapper.ini = src\deprecated\tkgl_mpcmapper.ini
-		src\deprecated\tkgl_mpcmapper.so = src\deprecated\tkgl_mpcmapper.so
 	EndProjectSection
 EndProject
 Global

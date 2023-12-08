@@ -1,15 +1,9 @@
 
 
 using Microsoft.Extensions.Configuration;
-using Microsoft.VisualBasic.Logging;
 using Renci.SshNet;
 using Renci.SshNet.Common;
-using System.Configuration;
 using System.Diagnostics;
-using System.Net.Sockets;
-using System.Runtime.Intrinsics.X86;
-using System.Security.AccessControl;
-using static System.Windows.Forms.VisualStyles.VisualStyleElement.StartPanel;
 
 
 namespace BuildNDeploy {
@@ -28,11 +22,18 @@ namespace BuildNDeploy {
         void log(string info) {
             this.Invoke((Func<string, bool>)DoGuiAccess, info);
         }
+
+        [System.Runtime.InteropServices.DllImport("user32.dll")]
+
+        public static extern bool LockWindowUpdate(IntPtr hWndLock);
+
         bool DoGuiAccess(string info) {
+            LockWindowUpdate(logtext.Handle);
             logtext.Text = $"{logtext.Text}\r\n{info}";
             logtext.SelectionStart = logtext.Text.Length;
             logtext.SelectionLength = 0;
             logtext.ScrollToCaret();
+            LockWindowUpdate(IntPtr.Zero);
             return true;
 
         }
@@ -74,10 +75,6 @@ namespace BuildNDeploy {
         }
 
         private void button1_Click(object sender, EventArgs e) {
-
-            
-           
-            
 
             SshClient sshclient = new SshClient(config["mpc_ip"], "root");
             sshclient.Connect();
@@ -143,11 +140,9 @@ namespace BuildNDeploy {
                 logprocess.Start();
                 logprocess.BeginOutputReadLine();
                 logprocess.BeginErrorReadLine();
-
             } catch (Exception e) {
                 log($"Command {cmd} failed {e}");
             }
-            //return process
         }
 
 
