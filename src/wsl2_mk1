@@ -1,0 +1,16 @@
+#!/bin/sh
+#-DFOO=BAR
+
+#source $TKGL_PATH_FILE
+
+#sudo apt-get install gcc-arm-linux-gnueabihf -y
+#sudo apt-get install libasound2-dev -y
+
+#gcc $2 $1.c -o ./tmm-plugins/tmm-IamForce-LPMK3.so -shared -fPIC -I/usr/include/alsa -I./ -ldl
+#arm-linux-gnueabihf-gcc  $1.c -o $2 -shared -fPIC -I/usr/include/alsa -I./ -ldl -D_LPMK3_ -D_LIVE2_
+
+mkdir -p ../bin
+
+ arm-linux-gnueabihf-gcc  ./tmm-plugins/tmm-IamForce2.c -o ../bin/tmm-IamForce-LPMK3-LIVE2.so -shared -fPIC -I/usr/include/alsa -I./ -ldl -D_LPMK3_ -D_LIVE2_
+
+

@@ -500,7 +500,6 @@ static bool ControllerEventReceived(snd_seq_event_t *ev) {
         }
 
         if ( mapVal >= 0 ) {
-
             SendDeviceKeyEvent(mapVal,ev->data.control.value);
 
             return false;
@@ -517,7 +516,11 @@ static bool ControllerEventReceived(snd_seq_event_t *ev) {
     case SND_SEQ_EVENT_KEYPRESS:
       if ( ev->data.note.channel == 0 ) {
         // Launchpad mini pads
-        ev->data.note.note = ControllerGetForcePadNote(ev->data.note.note);
+
+        uint8_t ForcePadNote = ControllerGetForcePadNote(ev->data.note.note);
+       // tklog_debug("Controller Event received note %d forcenote %d\n", ev->data.note.note, ForcePadNote);
+        ev->data.note.note = ForcePadNote;
+
         SetMidiEventDestination(ev,TO_MPC_PRIVATE );
         // If controller column mode, simulate the columns and mutes pads
         if ( ControllerColumnsPadMode) {
