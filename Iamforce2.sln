@@ -13,6 +13,7 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution 
 		src\tkgl_midimapper.h = src\tkgl_midimapper.h
 		src\tkgl_strcmp.c = src\tkgl_strcmp.c
 		src\wsl2_mk = src\wsl2_mk
+		src\wsl2_mk1 = src\wsl2_mk1
 	EndProjectSection
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tmm-plugins", "tmm-plugins", "{626B5B61-93FB-454A-968B-67A29BC5CAFC}"

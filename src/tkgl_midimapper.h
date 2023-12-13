@@ -115,6 +115,14 @@ __ __| |           |  /_) |     ___|             |           |\n\
 #define COLOR_FULL_YELLOW  0x007F7F
 #define COLOR_FULL_MAGENTA 0x7F007F
 
+#define MPC_BUTTON_COLOR_OFF 0
+#define MPC_BUTTON_COLOR_RED_LO 1
+#define MPC_BUTTON_COLOR_RED_HI 3
+#define MPC_BUTTON_COLOR_YELLOW_LO 2
+#define MPC_BUTTON_COLOR_YELLOW_HI 4
+
+
+
 // Force buttons
 #define FORCE_BT_ENCODER 0x6F
 #define FORCE_BT_NAVIGATE 0

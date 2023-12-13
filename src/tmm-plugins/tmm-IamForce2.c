@@ -64,10 +64,20 @@ IAMFORCE PLUGIN -- Force Emulation on MPC
 // MPC Quadran OFFSETS
 // 1 2
 // 3 4
-#define MPC_QUADRAN_1 0
-#define MPC_QUADRAN_2 4
-#define MPC_QUADRAN_3 32
-#define MPC_QUADRAN_4 36
+//#define MPC_QUADRAN_1 0
+//#define MPC_QUADRAN_2 4
+//#define MPC_QUADRAN_3 32
+//#define MPC_QUADRAN_4 36
+
+#define MPC_BANK_A 32
+#define MPC_BANK_B 36
+#define MPC_BANK_C 0
+#define MPC_BANK_D 4
+
+#define MPC_BANK_E 40
+#define MPC_BANK_F 44
+#define MPC_BANK_G 50
+#define MPC_BANK_H 54
 
 
 // IAMFORCE MACRO CC# on channel 16
@@ -118,7 +128,7 @@ static const uint8_t IdentityReplySysexHeader[]   = {AKAI_SYSEX_IDENTITY_REPLY_H
 // 1 quadran is 4 MPC pads
 //  Q1 Q2
 //  Q3 Q4
-static int MPCPadQuadran = MPC_QUADRAN_1;
+static int MPCPadQuadran = MPC_BANK_C;
 
 // Force Matrix pads color cache - 10 lines of 8 pads
 static RGBcolor_t Force_PadColorsCache[8*10];
@@ -130,13 +140,9 @@ static uint8_t Force_ButtonLedsCache[128];
 // Holding shift will activate the shift mode
 static bool ShiftMode=false;
 
-// Special Solo mute mode fro MPC
-// Holding shift will activate the shift mode
-static bool MPCColumnsPadMode=false;
-static bool MPCColumnsPadModeLocked = false;
+static bool EraseMode = false;
 
-// Pad navigation mode
-static bool  MPCNavigationPadMode = false;
+static bool LaunchMode = false;
 
 // Shift mode within controller
 static bool CtrlShiftMode = false;
@@ -147,6 +153,10 @@ static bool ControllerColumnsPadModeLocked = false;
 
 // Current Solo Mode
 static int CurrentSoloMode = FORCE_SM_SOLO;
+
+// CurrentPad mode Note or Stepseq
+static int currentPadMode = 0;
+
 // Solo mode buttons map : same order as ForceSoloModes enum
 static const uint8_t SoloModeButtonMap [] = { FORCE_BT_MUTE,FORCE_BT_SOLO, FORCE_BT_REC_ARM, FORCE_BT_CLIP_STOP };
 
@@ -155,7 +165,7 @@ static bool KnobShiftMode = false;
 static bool KnobTouch = false;
 
 // USed by next seq macro
-static int CurrentSequence = -1;
+static int CurrentSequence = 0;
 static int CurrentMatrixVOffset=0;
 
 // Quadran for external controller (none by default)
@@ -191,12 +201,15 @@ typedef struct mapping {
     int mpc;
     //send force button with shift when shift is NOT pressed
     int shift;
+    int altForceButtonIfShiftIsPressed;
+    int altForceButton;
 }mapping;
 
 // Function prototypes ---------------------------------------------------------
 
-static int ForceGetMPCPadIndex(uint8_t padF);
-static uint8_t MPCGetForcePadNote(uint8_t padNote) ;
+//static int ForceGet MPCPadIndex(uint8_t padF);
+//static int ForceGetMP CPadIndex_org(uint8_t padF);
+
 static void MPCSetMapButtonLed(snd_seq_event_t *ev);
 static void MPCSetMapButton(snd_seq_event_t *ev) ;
 
@@ -204,27 +217,185 @@ static bool ControllerEventReceived(snd_seq_event_t *ev);
 static int  ControllerInitialize();
 static void IamForceMacro_NextSeq(int step);
 static void MPCRefresCurrentQuadran() ;
-static int MPCGetPadIndexFromNote(uint8_t MPCPadNote) ;
-static int MPCGetForcePadIndex(uint8_t padM) ;
 
 static mapping getForceMappingValue(uint8_t mpcValue);
+
+static uint8_t getForcePadIndex(uint8_t mpcPad);
+static uint8_t mapPadToTrackmapping(uint8_t mpcPad);
+
 // Midi controller specific ----------------------------------------------------
 // Include here your own controller implementation
 
-//#define _LIVE2_
+
+//map mpc pad to chromatic notes in force NOTES mode
+static mapping mpcPadForceNoteMapping[] = {
+    {106,49}, {107,55}, {108,51}, {109,53},
+    {102,48}, {103,47}, {104,45}, {105,43},
+    {114,40}, {115,38}, {116,46}, {117,44},
+    {110,37}, {111,36}, {112,42}, {113,82}
+};
+static uint8_t mapForceNote_ForceNoteMapping(uint8_t mpcPad) {
+    size_t size = sizeof(mpcPadForceNoteMapping) / sizeof(mpcPadForceNoteMapping[0]);
+    for (int i = 0; i < size; i++) {
+        if (mpcPadForceNoteMapping[i].mpc == mpcPad) {
+            return mpcPadForceNoteMapping[i].force;
+        }
+    }
+    return 0;
+}
+
+//map steps 2x8 first bar to 4x4 padmatrix in STEP mode
+//if quadrant = 2 then force step +=16
+static mapping mpcPadForceStepsMapping[] = {
+     {54,49}, {55,55}, {56,51}, {57,53}, {58,48}, {59,47}, {60,45}, {61,43},
+     {62,40}, {63,38}, {64,46}, {65,44}, {66,37}, {67,36}, {68,42}, {69,82}
+};
+static uint8_t mapForceNote_ForceStepsMapping(uint8_t mpcPad) {
+    size_t size = sizeof(mpcPadForceStepsMapping) / sizeof(mpcPadForceStepsMapping[0]);
+    for (int i = 0; i < size; i++) {
+        if (mpcPadForceStepsMapping[i].mpc == mpcPad) {
+            return mpcPadForceStepsMapping[i].force;
+        }
+    }
+    return 0;
+}
+
+static mapping mpcPadToTrack[] = {
+    {FORCE_BT_COLUMN_PAD5,40}, {FORCE_BT_COLUMN_PAD6,38}, {FORCE_BT_COLUMN_PAD7,46}, {FORCE_BT_COLUMN_PAD8,44},
+    {FORCE_BT_COLUMN_PAD1,37}, {FORCE_BT_COLUMN_PAD2,36}, {FORCE_BT_COLUMN_PAD3,42}, {FORCE_BT_COLUMN_PAD4,82}
+};
+static uint8_t mapPadToTrackmapping(uint8_t mpcPad) {
+    size_t size = sizeof(mpcPadToTrack) / sizeof(mpcPadToTrack[0]);
+    for (int i = 0; i < size; i++) {
+        if (mpcPadToTrack[i].mpc == mpcPad) {
+            return mpcPadToTrack[i].force;
+        }
+    }
+    return 0;
+}
+ 
+//map bank A (Q3) and bank B (Q4) map to 4x4 matrix in STEP mode
+// if quadrant = 4 then force +=4
+static mapping mpcPadForceStepmodeNotemapping[] = {
+    {86,49},  {87,55},  {88,51},  {89,53},
+    {94,48},  {95,47},  {96,45},  {97,43},
+    {102,40}, {103,38}, {104,46}, {105,44},
+    {110,37}, {111,36}, {112,42}, {113,82}
+};
+static uint8_t mapForceNote_ForceStepmodeNotemapping(uint8_t mpcPad) {
+    size_t size = sizeof(mpcPadForceStepmodeNotemapping) / sizeof(mpcPadForceStepmodeNotemapping[0]);
+    for (int i = 0; i < size; i++) {
+        if (mpcPadForceStepmodeNotemapping[i].mpc == mpcPad) {
+            return mpcPadForceStepmodeNotemapping[i].force;
+        }
+    }
+    return 0;
+}
+
+
+static uint8_t getForcePadIndex(uint8_t mpcPad) {
+    uint8_t ForcePadNote = 0;
+
+    if (currentPadMode == FORCE_BT_STEP_SEQ) {
+        //STEPS
+        if (MPCPadQuadran == MPC_BANK_C || MPCPadQuadran == MPC_BANK_D || MPCPadQuadran == MPC_BANK_G || MPCPadQuadran == MPC_BANK_H) {
+            ForcePadNote = mapForceNote_ForceStepsMapping(mpcPad);
+            switch (MPCPadQuadran) {
+                case MPC_BANK_D: ForcePadNote += 16; break;
+                case MPC_BANK_G: ForcePadNote += 32; break;
+                case MPC_BANK_H: ForcePadNote += 48; break;
+            }
+        }
+        //NOTES AND VELOCITY
+        else {
+            ForcePadNote = mapForceNote_ForceStepmodeNotemapping(mpcPad);
+            if (MPCPadQuadran == MPC_BANK_B) {
+                ForcePadNote += 4;
+            }
+        }
+    }
+    else if (currentPadMode == FORCE_BT_NOTE) {
+        ForcePadNote = mapForceNote_ForceNoteMapping(mpcPad);
+        switch (MPCPadQuadran) {
+            case MPC_BANK_B: ForcePadNote -= 16; break;
+            case MPC_BANK_C: ForcePadNote -= 32; break;
+            case MPC_BANK_D: ForcePadNote -= 48; break;
+        }
+    }
+    else if (currentPadMode == FORCE_BT_LAUNCH) {
+        ForcePadNote = mapForceNote_ForceStepmodeNotemapping(mpcPad);
+        
+        switch (MPCPadQuadran) {
+            case MPC_BANK_D: ForcePadNote += 4; break;
+            case MPC_BANK_A: ForcePadNote -= 32; break;
+            case MPC_BANK_B: ForcePadNote -= 28; break;
+        }
+    }
+    return ForcePadNote;
+}
+
+
+///////////////////////////////////////////////////////////////////////////////
+// Show  MPC pads of columns mode (SSM) 
+///////////////////////////////////////////////////////////////////////////////
+
+int padscolorcacheindexLAUNC[16] = { 56,57,58,59,48,49,50,51,40,41,42,43,32,33,34,35 };
+int padscolorcacheindexNOTES[16] = { 8, 9,10,11,12,13,14,15, 0, 1, 2, 3, 4, 5, 6, 7 };
+int padscolorcacheindexSTPSQ[16] = { 12,13,14,15, 8, 9,10,11, 4, 5, 6, 7, 0, 1, 2, 3 };
+
+static void MPCRefresCurrentQuadran() {
+    int padcolorindex = 0;
+    //tklog_debug("start MPCRefresCurrentQuadran\n");
+    for (uint8_t padnumber = 0; padnumber < 16; padnumber++) {
+        if (currentPadMode == FORCE_BT_STEP_SEQ && (MPCPadQuadran == MPC_BANK_C || MPCPadQuadran == MPC_BANK_D || MPCPadQuadran == MPC_BANK_G || MPCPadQuadran == MPC_BANK_H)) {
+            padcolorindex = padscolorcacheindexSTPSQ[padnumber];
+            switch (MPCPadQuadran) {
+                case MPC_BANK_D: padcolorindex += 16; break;
+                case MPC_BANK_G: padcolorindex += 32; break;
+                case MPC_BANK_H: padcolorindex += 48; break;
+            }
+            //tklog_debug("MPCRefresCurrentQuadran STEPS padcolorindex: %d\n", padcolorindex);
+        }
+        else if (currentPadMode == FORCE_BT_NOTE) {
+            padcolorindex = padscolorcacheindexNOTES[padnumber];
+            switch (MPCPadQuadran) {
+                case MPC_BANK_C:padcolorindex += 16; break;
+                case MPC_BANK_B:padcolorindex += 32; break;
+                case MPC_BANK_A:padcolorindex += 48; break;
+            }
+            //tklog_debug("MPCRefresCurrentQuadran NOTE padcolorindex: %d\n", padcolorindex);
+        }
+        else {
+            padcolorindex = padscolorcacheindexLAUNC[padnumber];
+            switch (MPCPadQuadran) {
+                case MPC_BANK_A:padcolorindex -= 32; break;
+                case MPC_BANK_B:padcolorindex -= 28; break;
+                case MPC_BANK_D:padcolorindex += 4; break;
+            }
+            //tklog_debug("MPCRefresCurrentQuadran LAUNCH padcolorindex: %d\n",padcolorindex);
+        }
+        DeviceSetPadColorRGB(MPC_Id, padnumber, Force_PadColorsCache[padcolorindex].c.r, Force_PadColorsCache[padcolorindex].c.g, Force_PadColorsCache[padcolorindex].c.b);
+    }
+    // tklog_debug("finish MPCRefresCurrentQuadran\n");
+}
+
+
+
+#define _LIVE2_
 
 static mapping buttonmapping[] = {
     {FORCE_BT_ENCODER , MPC_BT_ENCODER},
     {FORCE_BT_SHIFT, MPC_BT_SHIFT},
     {FORCE_BT_PLAY, MPC_BT_PLAY},
     {FORCE_BT_REC, MPC_BT_REC},
-    {FORCE_BT_MATRIX, MPC_BT_MAIN},
+    {FORCE_BT_MATRIX, MPC_BT_MAIN,0,1,FORCE_BT_NAVIGATE},
     {FORCE_BT_LAUNCH, MPC_BT_PLAY_START},
     {FORCE_BT_TAP_TEMPO, MPC_BT_TAP_TEMPO},
     {FORCE_BT_UNDO, MPC_BT_UNDO},
     {FORCE_BT_NOTE, MPC_BT_16_LEVEL},
     {FORCE_BT_COPY, MPC_BT_COPY},
-    {FORCE_BT_MENU, MPC_BT_MENU},
+    {FORCE_BT_MENU, MPC_BT_MENU,0,1,FORCE_BT_LOAD},
+    {FORCE_BT_ARP, MPC_BT_NOTE_REPEAT},
 
 #ifdef _LIVE2_
      {FORCE_BT_CLIP, MPC_BT_MUTE},
@@ -236,11 +407,9 @@ static mapping buttonmapping[] = {
 #if defined _LIVE2_ || _ONE_
 #warning MPC Model MPC LIVE II
     {FORCE_BT_DELETE, MPC_BT_ERASE },
-    {FORCE_BT_LOAD, MPC_BT_NOTE_REPEAT},
     {FORCE_BT_MIXER, MPC_BT_CHANNEL_MIXER},
     {FORCE_BT_SAVE, MPC_BT_FULL_LEVEL},
     {FORCE_BT_NAVIGATE, MPC_BT_NEXT_SEQ, FORCE_BT_CLIP },
-    {FORCE_BT_ARP, MPC_BT_TC},
     {FORCE_BT_STEP_SEQ, MPC_BT_STEP_SEQ},
     {FORCE_BT_STOP, MPC_BT_STOP},
     {FORCE_BT_STOP_ALL, MPC_BT_OVERDUB , FORCE_BT_REC},
@@ -248,7 +417,6 @@ static mapping buttonmapping[] = {
 
 #else
     {FORCE_BT_EDIT, MPC_BT_ERASE},
-    {FORCE_BT_ARP, MPC_BT_NOTE_REPEAT},
     {FORCE_BT_MIXER, MPC_BT_FULL_LEVEL},
     {FORCE_BT_SAVE, MPC_BT_OVERDUB},
     {FORCE_BT_ASSIGN_A, MPC_BT_BANK_A},
@@ -271,7 +439,7 @@ static mapping getForceMappingValue(uint8_t mpcValue) {
 
 // To compile define one of the following preprocesseur variables :
 // NONE is the default.
-//#define _LPMK3_
+#define _LPMK3_
 #if defined _APCKEY25MK2_
    #warning IamForce driver id : APCKEY25MK2
    #include "Iamforce-APCKEY25MK2.h"
@@ -301,69 +469,20 @@ static mapping getForceMappingValue(uint8_t mpcValue) {
 // Midi controller specific END ------------------------------------------------
 
 
-///////////////////////////////////////////////////////////////////////////////
-// Get MPC pad # from a Force pad index relatively to the current quadran,
-///////////////////////////////////////////////////////////////////////////////
-static int ForceGetMPCPadIndex(uint8_t padF) {
-
-  uint8_t padL = padF / 8 ;
-  uint8_t padC = padF % 8 ;
-  uint8_t padM = 0x7F ;
-
-  uint8_t PadOffsetL = MPCPadQuadran / 8;
-  uint8_t PadOffsetC = MPCPadQuadran % 8;
-
-  // Transpose Force pad index to Mpc pad index in the 4x4 current quadran
-  if ( padL >= PadOffsetL && padL < PadOffsetL + 4 ) {
-    if ( padC >= PadOffsetC  && padC < PadOffsetC + 4 ) {
-      padM = (  3 - ( padL - PadOffsetL  ) ) * 4 + ( padC - PadOffsetC)  ;
-    }
-  }
-
-  return padM;
-}
-
-///////////////////////////////////////////////////////////////////////////////
-// Get MPC pad # index from MPC pad note
-///////////////////////////////////////////////////////////////////////////////
-static int MPCGetPadIndexFromNote(uint8_t MPCPadNote) {
-  uint8_t mapVal = MPC_PadNoteMapToIndex[MPCPadNote - 0x24 ] ;
-  return mapVal == 0xFF ? -1:mapVal;
-}
-
-///////////////////////////////////////////////////////////////////////////////
-// Get Force pad # note from MPC pad note
-///////////////////////////////////////////////////////////////////////////////
-static uint8_t MPCGetForcePadNote(uint8_t MPCPadNote) {
-
-  int mapVal = MPCGetPadIndexFromNote(MPCPadNote);
-
-  if (mapVal >= 0 ) {
-
-    if ( (mapVal = MPCGetForcePadIndex(mapVal) ) >= 0 ) return mapVal + FORCEPADS_NOTE_OFFSET ;
- 
-  }
-  return 0x7F; // a default value if unknow pad #
-
-}
-
-///////////////////////////////////////////////////////////////////////////////
-// Get Force pad index from MPC pad index according to the current quadran
-///////////////////////////////////////////////////////////////////////////////
-static int MPCGetForcePadIndex(uint8_t padM) {
-
-  if (padM < 16  ) return  ( 3 - padM / 4) * 8 + padM % 4  + MPCPadQuadran;
-
-  return -1;
-
-}
 
 ///////////////////////////////////////////////////////////////////////////////
 // Set a mapped MPC button LED from a Force button Led Event
 ///////////////////////////////////////////////////////////////////////////////
+
 static void MPCSetMapButtonLed(snd_seq_event_t *ev) { 
 
   int mapVal = -1 ;
+
+  if (ev->data.control.value == 3 &&
+      (ev->data.control.param == FORCE_BT_NOTE || ev->data.control.param == FORCE_BT_STEP_SEQ || ev->data.control.param == FORCE_BT_LAUNCH)) {
+      tklog_debug("switch padmode to %d\n", ev->data.control.param);
+      currentPadMode = ev->data.control.param;
+  }
 
   bool sent = false;
   size_t size = sizeof(buttonmapping) / sizeof(buttonmapping[0]);
@@ -392,6 +511,16 @@ static void MPCSetMapButtonLed(snd_seq_event_t *ev) {
    
       ev->data.control.param = MPC_BT_QLINK_SELECT_LED_1;
       SendMidiEvent(ev);
+
+      ev->data.control.param = MPC_BT_PLUS;
+      SendMidiEvent(ev);
+
+      ev->data.control.param = MPC_BT_MINUS;
+      SendMidiEvent(ev);
+
+      ev->data.control.param = MPC_BT_TC;
+      SendMidiEvent(ev);
+
 
       return;
   }
@@ -427,110 +556,26 @@ static void MPCSetMapButtonLed(snd_seq_event_t *ev) {
 
 }
 
-///////////////////////////////////////////////////////////////////////////////
-// Draw a pad line on MPC pads from a Force PAD line in the current Colors cache
-///////////////////////////////////////////////////////////////////////////////
-void MPCDrawPadsLineFromForceCache(uint8_t forcePadL, uint8_t forcePadC, uint8_t mpcPadL) {
 
-  // A line of 4 pads
-  for ( uint8_t c = 0 ; c < 4 ; c++ ) {
-    uint8_t p = forcePadL*8 + c + forcePadC  ;
-    DeviceSetPadColorRGB(MPC_Id, mpcPadL * 4 + c, Force_PadColorsCache[p].c.r,Force_PadColorsCache[p].c.g,Force_PadColorsCache[p].c.b );
-  }
-
-}
-
-///////////////////////////////////////////////////////////////////////////////
-// Show  MPC pads of columns mode (SSM) 
-///////////////////////////////////////////////////////////////////////////////
-static void MPCRefreshColumnsPads(bool show) {
- if ( show ) {
-    // Line 9 = track selection
-    // Line 8 = mute modes
-    MPCDrawPadsLineFromForceCache(9,0,3);
-    MPCDrawPadsLineFromForceCache(9,4,1);
-    MPCDrawPadsLineFromForceCache(8,0,2);
-    MPCDrawPadsLineFromForceCache(8,4,0);
-  }
-  else {
-    // Restore initial pads color, and take car of current quadran
-    MPCRefresCurrentQuadran() ;
-  }
-}
-
-///////////////////////////////////////////////////////////////////////////////
-// Show  MPC pads of columns mode (SSM) 
-///////////////////////////////////////////////////////////////////////////////
-static void MPCRefresCurrentQuadran() {
-
-    // Restore initial pads color, and take car of current quadran
-    for ( uint8_t l = 0 ; l < 4 ; l++) {
-      for ( uint8_t c=0 ; c < 4 ; c++ ) {
-
-        uint8_t p = MPCPadQuadran + l*8 + c;
-        DeviceSetPadColorRGB(MPC_Id, (3 - l)*4 + c, Force_PadColorsCache[p].c.r,Force_PadColorsCache[p].c.g,Force_PadColorsCache[p].c.b );
-
-      }
-    }
-}
-
-///////////////////////////////////////////////////////////////////////////////
-// Show  MPC navigation pads mode
-///////////////////////////////////////////////////////////////////////////////
-static void MPCRefreshNavigationPads(bool show) {
- if ( show ) {
-    // ----------------------------------------------------
-    // | LAUNCH 1 |  First SEQ |   PREV SEQ |  NEXT SEQ |
-    // ----------------------------------------------------
-    // | LAUNCH 2 |  LAST SEQ |   LEFT    |    RIGHT    |    
-    // ----------------------------------------------------
-    // | LAUNCH 3 |    UP    |  Quadran 1 | Quandran 2  |
-    // ---------------------------------------------------
-    // | LAUNCH 4 |    DOWN  | Quadran 3  | Quadran 4   |
-    // ----------------------------------------------------
-
-    // Quadran
-    DeviceSetPadColorValue(MPC_Id,6, MPCPadQuadran == MPC_QUADRAN_1 ? COLOR_WHITE : COLOR_FULL_RED );
-    DeviceSetPadColorValue(MPC_Id,7, MPCPadQuadran == MPC_QUADRAN_2 ? COLOR_WHITE : COLOR_FULL_RED );
-    DeviceSetPadColorValue(MPC_Id,2, MPCPadQuadran == MPC_QUADRAN_3 ? COLOR_WHITE : COLOR_FULL_RED );
-    DeviceSetPadColorValue(MPC_Id,3, MPCPadQuadran == MPC_QUADRAN_4 ? COLOR_WHITE : COLOR_FULL_RED );
-
-    // Arrows
-    DeviceSetPadColorValue(MPC_Id,1,  COLOR_FULL_GREEN );
-    DeviceSetPadColorValue(MPC_Id,5, COLOR_FULL_GREEN );
-    DeviceSetPadColorValue(MPC_Id,10, COLOR_FULL_GREEN );
-    DeviceSetPadColorValue(MPC_Id,11, COLOR_FULL_GREEN );
- 
-    // Sequence buttons
-    DeviceSetPadColorValue(MPC_Id,15, COLOR_FULL_BLUE );
-    DeviceSetPadColorValue(MPC_Id,14, COLOR_FULL_BLUE );
-    DeviceSetPadColorValue(MPC_Id,13, COLOR_FULL_MAGENTA );
-    DeviceSetPadColorValue(MPC_Id,9,  COLOR_FULL_MAGENTA );  
- 
-
-  }
-  else {
-    // Restore initial pads color, and take car of current quadran
-    MPCRefresCurrentQuadran() ;
-  }
-}
-
-static void SetBankButtonLED(int button) {
+static void SetBankButtonLED(int button,bool shift) {
     snd_seq_event_t ev2;
     snd_seq_ev_clear(&ev2);
     ev2.type = SND_SEQ_EVENT_CONTROLLER;
     ev2.data.control.channel = 0;
     SetMidiEventDestination(&ev2, TO_CTRL_MPC_PRIVATE);
 
-    int bankbuttons[] = { MPC_BT_BANK_A, MPC_BT_BANK_B, MPC_BT_BANK_C,MPC_BT_BANK_D };
+    int bankbuttons[] = { MPC_BT_BANK_A, MPC_BT_BANK_B, MPC_BT_BANK_C, MPC_BT_BANK_D };
     for( int i = 0; i < 4; i++) {
         ev2.data.control.param = bankbuttons[i];
-        ev2.data.control.value = 1;
+        ev2.data.control.value = MPC_BUTTON_COLOR_RED_LO;
         SendMidiEvent(&ev2);
     }
     ev2.data.control.param = button;
-    ev2.data.control.value = 3;
+    ev2.data.control.value = shift ?  MPC_BUTTON_COLOR_YELLOW_HI : MPC_BUTTON_COLOR_RED_HI;
+   // tklog_debug("SetBankButtonLED param: %d -> value: %d \n", ev2.data.control.param, ev2.data.control.value);
     SendMidiEvent(&ev2);
+
+    MPCRefresCurrentQuadran();
 }
 
 static int Current_QLink_LED = MPC_BT_QLINK_SELECT_LED_1;
@@ -543,40 +588,105 @@ static void MPCSetMapButton(snd_seq_event_t *ev) {
     int mapVal = -1 ;
     bool shiftReleaseBefore = false;
     
+    if (ev->data.note.note == MPC_BT_ERASE) {
+        EraseMode = (ev->data.note.velocity == 0x7F);
+    }
+
+    if (ev->data.note.note == MPC_BT_PLAY_START) {
+        LaunchMode = (ev->data.note.velocity == 0x7F);
+    }
+
     if ( ev->data.note.note == MPC_BT_SHIFT ) {
         ShiftMode = ( ev->data.note.velocity == 0x7F ) ;
         mapVal = FORCE_BT_SHIFT ;
     }
 
-    else if (ev->data.note.note == MPC_BT_BANK_A) { MPCPadQuadran = MPC_QUADRAN_3; SetBankButtonLED(MPC_BT_BANK_A);}
-    else if (ev->data.note.note == MPC_BT_BANK_B) { MPCPadQuadran = MPC_QUADRAN_4; SetBankButtonLED(MPC_BT_BANK_B);}
-    else if (ev->data.note.note == MPC_BT_BANK_C) { MPCPadQuadran = MPC_QUADRAN_1; SetBankButtonLED(MPC_BT_BANK_C);}
-    else if (ev->data.note.note == MPC_BT_BANK_D) { MPCPadQuadran = MPC_QUADRAN_2; SetBankButtonLED(MPC_BT_BANK_D);}
 
-    // SSM Mode for MPC with the PLUS key
+
+    //shift + long press tap tempo open metronom
+    else if (ShiftMode && ev->data.note.note == MPC_BT_TAP_TEMPO) {
+        if (ev->data.note.velocity == 0x7F) {
+            SendDeviceKeyEvent(FORCE_BT_MUTE_PAD5, 0x7F);
+        }
+        else {
+            SendDeviceKeyEvent(FORCE_BT_MUTE_PAD5, 0);
+        }
+        return;
+    }
+   
+
+    else if (ev->data.note.note == MPC_BT_BANK_A && ev->data.note.velocity == 0x7F) { MPCPadQuadran = MPC_BANK_A; SetBankButtonLED(MPC_BT_BANK_A,false);}
+    else if (ev->data.note.note == MPC_BT_BANK_B && ev->data.note.velocity == 0x7F) { MPCPadQuadran = MPC_BANK_B; SetBankButtonLED(MPC_BT_BANK_B,false);}
+    else if (ev->data.note.note == MPC_BT_BANK_C && ev->data.note.velocity == 0x7F) {
+        if (ShiftMode) {
+            MPCPadQuadran = MPC_BANK_G; SetBankButtonLED(MPC_BT_BANK_C,true);
+        }
+        else {
+            MPCPadQuadran = MPC_BANK_C; SetBankButtonLED(MPC_BT_BANK_C,false);
+        }
+        
+    }
+    else if (ev->data.note.note == MPC_BT_BANK_D && ev->data.note.velocity == 0x7F) {
+        if (ShiftMode) {
+            MPCPadQuadran = MPC_BANK_H; SetBankButtonLED(MPC_BT_BANK_D, true);
+        }
+        else {
+            MPCPadQuadran = MPC_BANK_D; SetBankButtonLED(MPC_BT_BANK_D, false);
+        }
+    }
+
+    
     else if ( ev->data.note.note == MPC_BT_PLUS ) {
-      MPCColumnsPadMode = ( ev->data.note.velocity == 0x7F ) ;
-      //tklog_debug("Refresh pads = %d\n",MPCColumnsPadMode);
-      MPCRefreshColumnsPads(MPCColumnsPadMode);
+        if (currentPadMode == FORCE_BT_LAUNCH) {
+            //plus goes up in screen
+            if (ev->data.note.velocity == 0x7F) { IamForceMacro_NextSeq(-1); }
+        }
+        else {
+            // octave + on PLUS key
+            if (ev->data.note.velocity == 0x7F) {
+                SendDeviceKeyEvent(FORCE_BT_SHIFT, 0x7F);
+                SendDeviceKeyEvent(FORCE_BT_MUTE_PAD8, 0x7F);
+            }
+            else {
+                SendDeviceKeyEvent(FORCE_BT_MUTE_PAD8, 0);
+                SendDeviceKeyEvent(FORCE_BT_SHIFT, 0);
+            }
+        }
+        return;
+    } 
+    else if (ev->data.note.note == MPC_BT_MINUS) {
+        if (currentPadMode == FORCE_BT_LAUNCH) {
+            //minus goes down in screen
+            if (ev->data.note.velocity == 0x7F) { IamForceMacro_NextSeq(1); }
+        }
+        else {
+            //octave - on minus key
+            if (ev->data.note.velocity == 0x7F) {
+                SendDeviceKeyEvent(FORCE_BT_SHIFT, 0x7F);
+                SendDeviceKeyEvent(FORCE_BT_MUTE_PAD7, 0x7F);
+            }
+            else {
+                SendDeviceKeyEvent(FORCE_BT_MUTE_PAD7, 0);
+                SendDeviceKeyEvent(FORCE_BT_SHIFT, 0);
+            }
+        }
+        return;
     }
 
-    // Pad navigation mode with the MINUS key
-    // If MINUS pressed when in MPCCOlumns pad mode : change mode
-    else if ( ev->data.note.note == MPC_BT_MINUS ) {
-      
-      if ( MPCColumnsPadMode ) { 
-          if ( ev->data.note.velocity == 0x7F ) {
-            if ( ++CurrentSoloMode == FORCE_SM_END ) CurrentSoloMode = 0 ;
-            SendDeviceKeyPress(FORCE_BT_MUTE + CurrentSoloMode);
-            //tklog_debug("CurrentMode %d \n",CurrentSoloMode);
-          }
-      }
-      else {
-          MPCNavigationPadMode = ( ev->data.note.velocity == 0x7F ) ;
-          //tklog_debug("Refresh pads = %d\n",MPCColumnsPadMode);
-          MPCRefreshNavigationPads(MPCNavigationPadMode);
-      }
+
+    //long press TC open Timing correction
+    else if (ev->data.note.note == MPC_BT_TC) {
+        if (ev->data.note.velocity == 0x7F) {
+            SendDeviceKeyEvent(FORCE_BT_SHIFT, 0x7F);
+            SendDeviceKeyEvent(FORCE_BT_MUTE_PAD6, 0x7F);
+        }
+        else {
+            SendDeviceKeyEvent(FORCE_BT_MUTE_PAD6, 0);
+            SendDeviceKeyEvent(FORCE_BT_SHIFT, 0);
+        }
+        return;
     }
+
 
     else if (
         ev->data.note.note == MPC_BT_ENCODER ||
@@ -596,13 +706,20 @@ static void MPCSetMapButton(snd_seq_event_t *ev) {
         ev->data.note.note == MPC_BT_FULL_LEVEL ||
         ev->data.note.note == MPC_BT_STEP_SEQ ||
         ev->data.note.note == MPC_BT_MUTE ||
-        ev->data.note.note == MPC_BT_MENU
+        ev->data.note.note == MPC_BT_MENU ||
+        ev->data.note.note == MPC_BT_MINUS ||
+        ev->data.note.note == MPC_BT_PLUS
         ) {
             mapping map = getForceMappingValue(ev->data.note.note);
             if (!ShiftMode && map.shift > 0 && ev->data.note.velocity == 0x7F) {
                 SendDeviceKeyEvent(FORCE_BT_SHIFT, 0x7F);
                 SendDeviceKeyPress(map.shift);
                 SendDeviceKeyEvent(FORCE_BT_SHIFT, 0);
+                return;
+            }
+            else if (ShiftMode && map.altForceButtonIfShiftIsPressed > 0) {
+                SendDeviceKeyEvent(FORCE_BT_SHIFT, 0);
+                SendDeviceKeyPress(map.altForceButton);
                 return;
             }
             else {
@@ -753,22 +870,22 @@ bool MidiMapper( uint8_t sender, snd_seq_event_t *ev, uint8_t *buffer, size_t si
 
                 //= sizeof(MPCSysexPadColorFn) ;
 
-                uint8_t padF, padFL, padFC;
+                uint8_t padF;
                 int padCt = -1;
 
                 // Manage mutliple set colors in the same sysex stream
                 while (msgLen > 0) {
                     padF = buffer[i];
-                    padFL = padF / 8;
-                    padFC = padF % 8;
-                    buffer[i] = ForceGetMPCPadIndex(buffer[i]);
+                    
                     i++;
 
                     // Update Force pad color cache
                     Force_PadColorsCache[padF].c.r = buffer[i++];
                     Force_PadColorsCache[padF].c.g = buffer[i++];
                     Force_PadColorsCache[padF].c.b = buffer[i++];
-
+                    //if (Force_PadColorsCache[padF].c.g == 127) {
+                     //   tklog_debug("PAD COLOR padF=%d greenvalue=%d \n", padF,Force_PadColorsCache[padF].c.g);
+                    //}
                     //stklog_debug("PAD COLOR (len %d) (%d) %02X%02X%02X\n",msgLen,padF,Force_PadColorsCache[padF].c.r, Force_PadColorsCache[padF].c.g,Force_PadColorsCache[padF].c.b);
                     padCt = ControllerGetPadIndex(padF - CtrlPadQuadran);
                     if (padCt >= 0) ControllerSetPadColorRGB(padCt, Force_PadColorsCache[padF].c.r, Force_PadColorsCache[padF].c.g, Force_PadColorsCache[padF].c.b);
@@ -787,9 +904,7 @@ bool MidiMapper( uint8_t sender, snd_seq_event_t *ev, uint8_t *buffer, size_t si
 
         // Refresh special modes
         if (ControllerColumnsPadMode) ControllerRefreshColumnsPads(true);
-        if (MPCColumnsPadMode) MPCRefreshColumnsPads(true);
-        if (MPCNavigationPadMode) MPCRefreshNavigationPads(true);
-
+        MPCRefresCurrentQuadran();
         return false; // Do not allow default send
 
         break;
@@ -806,7 +921,7 @@ bool MidiMapper( uint8_t sender, snd_seq_event_t *ev, uint8_t *buffer, size_t si
 
                 // Save Led status in cache
                 Force_ButtonLedsCache[ev->data.control.param] = ev->data.control.value;
-
+                //tklog_debug("ButtonLedCache param: %d -> value: %d \n", ev->data.control.param, ev->data.control.value);
                 // Map with controller leds. Will send a midi msg to the controller
                 ControllerSetMapButtonLed(ev);
 
@@ -860,122 +975,37 @@ bool MidiMapper( uint8_t sender, snd_seq_event_t *ev, uint8_t *buffer, size_t si
             // Mpc Pads on channel 9
             if (ev->data.note.channel == 9) {
 
-                // Check if navigation pad mode is active 
-                if (MPCNavigationPadMode) {
+               
+                uint8_t ForcePadNote = ev->data.note.note;
+                if (EraseMode) {
 
-                    if (ev->type == SND_SEQ_EVENT_NOTEON) {
+                    uint8_t track = mapPadToTrackmapping(ev->data.note.note);
 
-                        // Check MPC Columns modes
-                        // ----------------------------------------------------
-                        // | LAUNCH 1 |  First SEQ |   PREV SEQ |  NEXT SEQ |
-                        // ----------------------------------------------------
-                        // | LAUNCH 2 |  LAST SEQ |   LEFT    |    RIGHT    |    
-                        // ----------------------------------------------------
-                        // | LAUNCH 3 |    UP    |  Quadran 1 | Quandran 2  |
-                        // ---------------------------------------------------
-                        // | LAUNCH 4 |    DOWN  | Quadran 3  | Quadran 4   |
-                        // ----------------------------------------------------
-
-                        int padF = MPCGetForcePadNote(ev->data.note.note) - FORCEPADS_NOTE_OFFSET;
-
-                        switch (ev->data.note.note)
-                        {
-                        case MPC_PAD_1:
-                        case MPC_PAD_5:
-                        case MPC_PAD_9:
-                        case MPC_PAD_13:
-                            // Launch the right line
-                            //tklog_debug("Launch PadF %d \n",padF);
-                            SendDeviceKeyPress(FORCE_BT_LAUNCH_1 + padF / 8);
-                            break;
-
-                            // QUADRANS
-                        case MPC_PAD_3:
-                            MPCPadQuadran = MPC_QUADRAN_3;
-                            break;
-                        case MPC_PAD_4:
-                            MPCPadQuadran = MPC_QUADRAN_4;
-                            break;
-                        case MPC_PAD_7:
-                            MPCPadQuadran = MPC_QUADRAN_1;
-                            break;
-                        case MPC_PAD_8:
-                            MPCPadQuadran = MPC_QUADRAN_2;
-                            break;
-
-                            // Sequence macros
-                        case MPC_PAD_16:
-                            IamForceMacro_NextSeq(1);
-                            break;
-                        case MPC_PAD_15:
-                            IamForceMacro_NextSeq(-1);
-                            break;
-                        case MPC_PAD_14:
-                            IamForceMacro_NextSeq(0);
-                            break;
-                        case MPC_PAD_10:
-                            IamForceMacro_NextSeq(100);
-                            break;
-
-                            // Arrows
-                        case MPC_PAD_2:
-                            SendDeviceKeyPress(FORCE_BT_DOWN);
-                            break;
-                        case MPC_PAD_6:
-                            SendDeviceKeyPress(FORCE_BT_UP);
-                            break;
-                        case MPC_PAD_11:
-                            SendDeviceKeyPress(FORCE_BT_LEFT);
-                            break;
-                        case MPC_PAD_12:
-                            SendDeviceKeyPress(FORCE_BT_RIGHT);
-                            break;
-                        }
-
-                        MPCRefresCurrentQuadran();
-                        MPCRefreshNavigationPads(true);
-
+                    if (track >0) {
+                        SendDeviceKeyPress(track);
                     }
-
                     return false;
                 }
-                else
-                    if (MPCColumnsPadMode) {
 
-                        if (ev->type == SND_SEQ_EVENT_KEYPRESS) return false;
 
-                        uint8_t padM = MPCGetPadIndexFromNote(ev->data.note.note);
-                        uint8_t padMC = padM % 4;
-                        uint8_t padML = padM / 4;
+                ForcePadNote = getForcePadIndex(ev->data.note.note);
+                if (ev->data.note.velocity > 0) {
+               //     tklog_debug("PAD Event received as usual padmode %d -> orgnote= %d forcenote %d\n",currentPadMode, ev->data.note.note, ForcePadNote);
+                }
 
-                        ev->data.note.channel = 0;
+                ev->data.note.note = ForcePadNote;
 
-                        // Column pads
-                        if (padML == 1 || padML == 3) {
+               
 
-                            ev->data.note.note = FORCE_BT_COLUMN_PAD1 + padMC + (padML == 1 ? 4 : 0);
-                            ev->data.note.velocity = (ev->data.note.velocity > 0 ? 0x7F : 00);
-                        }
-                        else {
-                            ev->data.note.note = FORCE_BT_MUTE_PAD1 + padMC + (padML == 0 ? 4 : 0);
-                            ev->data.note.velocity = (ev->data.note.velocity > 0 ? 0x7F : 00);
-                        }
-                    }
+                // If Shift Mode, simulate Select key
+                if (ShiftMode) {
+                    SendDeviceKeyEvent(FORCE_BT_SELECT, 0x7F);
+                    SendMidiEvent(ev);
+                    SendDeviceKeyEvent(FORCE_BT_SELECT, 0);
+                    return false;
+                }
 
-                    else {
-
-                        // Pads as usual
-                        ev->data.note.note = MPCGetForcePadNote(ev->data.note.note);
-
-                        // If Shift Mode, simulate Select key
-                        if (ShiftMode) {
-                            SendDeviceKeyEvent(FORCE_BT_SELECT, 0x7F);
-                            SendMidiEvent(ev);
-                            SendDeviceKeyEvent(FORCE_BT_SELECT, 0);
-                            return false;
-                        }
-
-                    }
+                   
 
             }
 

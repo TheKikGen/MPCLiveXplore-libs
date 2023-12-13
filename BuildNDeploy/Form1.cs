@@ -59,6 +59,8 @@ namespace BuildNDeploy {
                 process.BeginOutputReadLine();
                 process.BeginErrorReadLine();
 
+                process.Exited += (sender, e) => { log("ready"); };
+
             } catch (Exception e) {
                 log($"Command {cmd} failed {e}");
             }
@@ -72,8 +74,47 @@ namespace BuildNDeploy {
                 cd {src}
                 ./wsl2_mk
             ");
+
+
         }
 
+        private void button3_Click(object sender, EventArgs e) {
+            var src = config["Iamforce2_src_path_wsl"];
+
+            BashC(@$"
+                cd {src}
+                ./wsl2_mk1
+            ");
+        }
+        private void button2_Click(object sender, EventArgs e) {
+            SshClient sshclient = new SshClient(config["mpc_ip"], "root");
+            sshclient.Connect();
+            SshCommand sc = sshclient.CreateCommand("systemctl stop inmusic-mpc; systemctl status inmusic-mpc");
+            sc.Execute();
+            log(sc.Result.Replace("\n", "\r\n") + "\r\n");
+
+            //var bins = Directory.EnumerateFiles(config["Iamforce2_bin_path_windows"], "*.so");
+            var bins = new[] { config["Iamforce2_bin_path_windows"] + "\\" + "tmm-IamForce-LPMK3-LIVE2.so" };
+            foreach (var bin in bins) {
+                log(bin.ToString());
+
+                var filename = Path.GetFileName(bin);
+                var remotepath = $"{config["Iamforce2_remote_dir"]}/{filename}";
+
+                var scp = new ScpClient(config["mpc_ip"], "root");
+                scp.Connect();
+                scp.Uploading += delegate (object sender, ScpUploadEventArgs e) {
+                    log($"uploaded {e.Filename} bytes {e.Uploaded} from {e.Size}");
+                };
+
+                var file = new FileInfo(bin);
+                scp.Upload(file, remotepath);
+            }
+
+            sc = sshclient.CreateCommand("systemctl start inmusic-mpc; systemctl status inmusic-mpc");
+            sc.Execute();
+            log(sc.Result.Replace("\n", "\r\n") + "\r\n");
+        }
         private void button1_Click(object sender, EventArgs e) {
 
             SshClient sshclient = new SshClient(config["mpc_ip"], "root");
@@ -154,5 +195,7 @@ namespace BuildNDeploy {
                 logprocess?.Kill();
             }
         }
+
+       
     }
 }
